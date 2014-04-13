@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" manifest="cache.appcache">
+<head>
+  <meta charset="utf-8">
+  <title>Los indispensables</title>
+
+  <link href="style/b.css" rel="stylesheet" type="text/css">
+  <link href='http://fonts.googleapis.com/css?family=Source+Code+Pro:400,600,700' rel='stylesheet' type='text/css'>
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="meta/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="keywords" content="HTML,CSS,Javascript,2048,Maravillas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0, maximum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="format-detection" content="telephone=no" />
+
+  <meta property="og:title" content="Los indispensables"/>
+  <meta property="og:site_name" content="Los indispensables"/>
+  <meta property="og:description" content="Los indispensables"/>
+  <meta property="og:image" content="tile-sets/escritores/indispensables.png"/>
+</head>
+<body>
+  <div class="container">
+    <div class="heading">
+      <table>
+        <tr>
+          <td><h1 class="title">Los autores indispensables para todo escritor que se precie</h1></td>
+          <td><div class="scores-container">
+            <div class="score-container">0</div>
+            <div class="best-container">0</div></td>
+            </div>
+        </tr>
+      </table>
+    </div>
+
+    <div class="above-game">
+      <p class="game-intro">
+      <a class="restart-button">Nueva partida</a>
+      </p>
+      
+    </div>
+
+    <div class="game-container">
+      <div class="game-message">
+        <p></p>
+        <div class="lower">
+          <a class="retry-button">Otra</a>
+          <div class="score-sharing"></div>
+        </div>
+      </div>
+
+      <div class="grid-container">
+        <div class="grid-row">
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+        </div>
+        <div class="grid-row">
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+        </div>
+        <div class="grid-row">
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+        </div>
+        <div class="grid-row">
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+          <div class="grid-cell"></div>
+        </div>
+      </div>
+
+      <div class="tile-container">
+
+      </div>
+    </div>
+
+
+    <hr>
+    <p class="game-explanation">
+      <strong class="important">C&oacute;mo jugar:</strong> con las flechas.
+    </p>
+    <hr>
+    <p>
+    Modificaci&oacute;n de <a href="http://gabrielecirulli.github.io/2048/" target="_blank">2048</a> de Gabriele Cirulli.
+    </p>
+  </div>
+
+  <script src="js/bind_polyfill.js"></script>
+  <script src="js/classlist_polyfill.js"></script>
+  <script src="js/animframe_polyfill.js"></script>
+  <script src="js/keyboard_input_manager.js"></script>
+  <script src="js/html_actuator.js"></script>
+  <script src="js/gridb.js"></script>
+  <script src="js/tile.js"></script>
+  <script src="js/local_storage_manager.js"></script>
+  <script src="js/game_manager.js"></script>
+  <script src="js/application.js"></script>
+  <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="https://platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");</script>
+
+</body>
+</html>
