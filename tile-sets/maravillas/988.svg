@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   version="1.1"
+   width="111.56768"
+   height="111.56768"
+   id="svg2">
+  <defs
+     id="defs4" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     transform="translate(-191.71615,-289.79261)"
+     id="layer1">
+    <path
+       d="m 48.571431,158.79074 c -15.75838,0 -18.571429,-2.81305 -18.571429,-18.57142 -10e-7,-15.75838 2.813048,-18.57143 18.571428,-18.57143 15.758379,0 18.571428,2.81304 18.571429,18.57142 0,15.75838 -2.813049,18.57143 -18.571428,18.57143 z"
+       transform="matrix(3.0037453,0,0,3.0037453,101.60379,-75.606653)"
+       id="path3771"
+       style="opacity:0.87999998;color:#000000;fill:#e0c000;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:1;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" />
+    <g
+       transform="translate(-3.532918,-0.62249)"
+       id="g2993">
+      <text
+         x="214.28571"
+         y="363.79074"
+         id="text2985"
+         xml:space="preserve"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;text-align:start;line-height:125%;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans Bold"><tspan
+           x="214.28571"
+           y="363.79074"
+           id="tspan2987">98</tspan></text>
+      <text
+         x="267.42856"
+         y="343.79074"
+         id="text2989"
+         xml:space="preserve"
+         style="font-size:32px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;text-align:start;line-height:125%;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans Bold"><tspan
+           x="267.42856"
+           y="343.79074"
+           id="tspan2991">8</tspan></text>
+    </g>
+  </g>
+</svg>
