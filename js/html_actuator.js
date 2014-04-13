@@ -17,7 +17,7 @@ HTMLActuator.prototype.actuate = function (grid, metadata) {
     grid.cells.forEach(function (column) {
       column.forEach(function (cell) {
         if (cell) {
-          self.addTile(cell);
+          self.addTile(cell, grid.value_jpg_refs);
         }
       });
     });
@@ -50,7 +50,7 @@ HTMLActuator.prototype.clearContainer = function (container) {
   }
 };
 
-HTMLActuator.prototype.addTile = function (tile) {
+HTMLActuator.prototype.addTile = function (tile, value_jpg_refs) {
   var valueMap = {
     2 :    '<Udacity>',
     4 :    '<Intro CS>',
@@ -72,9 +72,10 @@ HTMLActuator.prototype.addTile = function (tile) {
   
   var position  = tile.previousPosition || { x: tile.x, y: tile.y };
   var positionClass = this.positionClass(position);
+  var value = value_jpg_refs[tile.value];
 
   // We can't use classlist because it somehow glitches when replacing classes
-  var classes = ["tile", "tile-" + tile.value, positionClass];
+  var classes = ["tile", "tile-" + value, positionClass];
 
   if (tile.value > 2048) classes.push("tile-super");
 
@@ -96,7 +97,7 @@ HTMLActuator.prototype.addTile = function (tile) {
 
     // Render the tiles that merged
     tile.mergedFrom.forEach(function (merged) {
-      self.addTile(merged);
+      self.addTile(merged, value_jpg_refs);
     });
   } else {
     classes.push("tile-new");

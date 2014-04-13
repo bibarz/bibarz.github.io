@@ -1,6 +1,25 @@
-function Grid(size, previousState) {
+function Grid(size, previousState, value_jpg_refs) {
+  init_array =
   this.size = size;
   this.cells = previousState ? this.fromState(previousState) : this.empty();
+  if (value_jpg_refs) {
+      this.value_jpg_refs = value_jpg_refs
+  }
+  else {
+      this.value_jpg_refs = {}
+      this.value_jpg_refs[2] = 2 + Math.floor(Math.random() * 2);
+      this.value_jpg_refs[4] = 4 + Math.floor(Math.random() * 3);
+      this.value_jpg_refs[8] = 8 + Math.floor(Math.random() * 2);
+      this.value_jpg_refs[16] = 16 + Math.floor(Math.random() * 2);
+      this.value_jpg_refs[32] = 32;
+      this.value_jpg_refs[64] = 64 + Math.floor(Math.random() * 2);
+      this.value_jpg_refs[128] = 128;
+      this.value_jpg_refs[256] = 256 + Math.floor(Math.random() * 2);
+      this.value_jpg_refs[512] = 512;
+      this.value_jpg_refs[1024] = 1024;
+      this.value_jpg_refs[2048] = 2048;
+      this.value_jpg_refs[4096] = 4096;
+  }
 }
 
 // Build a grid of the specified size
@@ -112,6 +131,7 @@ Grid.prototype.serialize = function () {
 
   return {
     size: this.size,
-    cells: cellState
+    cells: cellState,
+    value_jpg_refs: this.value_jpg_refs
   };
 };
