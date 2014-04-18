@@ -78,7 +78,8 @@ GameManager.prototype.addStartTiles = function () {
 // Adds a tile in a random position
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
-    var value = Math.random() < 0.9 ? 2 : 4;
+      var r = Math.random()
+      var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
 
     this.grid.insertTile(tile);
@@ -163,8 +164,19 @@ GameManager.prototype.move = function (direction) {
         var next      = self.grid.cellContent(positions.next);
 
         // Only one merger per row traversal?
-        if (next && next.value === tile.value && !next.mergedFrom) {
-          var merged = new Tile(positions.next, tile.value * 2);
+        if (next && (next.value === tile.value || next.value < 0 || tile.value < 0) && !next.mergedFrom) {
+              if (tile.value > 0) {
+                var merged = new Tile(positions.next, tile.value * 2);
+                }
+              else if (next.value > 0) {
+                var merged = new Tile(positions.next, next.value * 2);
+                }
+              else {
+                var merged = new Tile(positions.next, 2);
+                }
+          // Eliminamos el halo de los comodines cambiándolos de clase
+          if (tile.value < 0 && tile.value > -10) tile.value = tile.value - 10;
+          if (next.value < 0 && next.value > -10) next.value = next.value - 10;
           merged.mergedFrom = [tile, next];
 
           self.grid.insertTile(merged);
@@ -181,7 +193,7 @@ GameManager.prototype.move = function (direction) {
         } else {
           self.moveTile(tile, positions.farthest);
         }
-
+        
         if (!self.positionsEqual(cell, tile)) {
           moved = true; // The tile moved from its original cell!
         }

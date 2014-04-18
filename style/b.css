@@ -236,14 +236,14 @@ hr {
   -moz-animation-fill-mode: both;
   animation-fill-mode: both; }
   .game-message p {
-    font-size: 60px;
+    font-size: 40px;
     font-weight: bold;
-    height: 60px;
-    line-height: 60px;
-    margin-top: 222px; }
+    height: 40px;
+    line-height: 40px;
+    margin-top: 20px; }
   .game-message .lower {
     display: block;
-    margin-top: 29px; }
+    margin-top: 60px; }
   .game-message .mailing-list {
     margin-top: 52px; }
     .game-message .mailing-list strong {
@@ -404,6 +404,25 @@ hr {
     font-family: 'Source Code Pro', Courier;
     font-size: 16px; 
     color: #354b59;}
+  .tile.tile-988 .tile-inner {
+    background: url('../tile-sets/standard/quill.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    font-size: 10px;
+    -webkit-animation: myglow 0.5s linear 0s infinite alternate;
+    animation: myglow 0.5s linear 0s infinite alternate;
+    -moz-animation: myglow 0.5s linear 0s infinite alternate; }
+    @media screen and (max-width: 520px) {
+      .tile.tile-988 .tile-inner {
+        font-size: 10px; } }
+  .tile.tile-978 .tile-inner {
+    background: url('../tile-sets/standard/quill.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    font-size: 10px; }
+    @media screen and (max-width: 520px) {
+      .tile.tile-978 .tile-inner {
+        font-size: 10px; } }
   .tile.tile-2 .tile-inner {
     background: url('../tile-sets/standard/homer.jpg');
     background-size: 100%;
@@ -495,6 +514,21 @@ hr {
       .tile.tile-super .tile-inner {
         font-size: 10px; } }
 
+@-webkit-keyframes myglow {
+  0% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0); }
+  100% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.33333); } }
+@-moz-keyframes myglow {
+  0% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0); }
+  100% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.33333); } }
+@keyframes myglow {
+  0% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0); }
+  100% {
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.33333); } }
 @-webkit-keyframes appear {
   0% {
     opacity: 0;
@@ -990,7 +1024,6 @@ a.learn:hover, a.keep-playing-button:hover, a.learn-low:hover {
   cursor: pointer;
   display: block;
   text-align: center;
-  float: right; 
   margin-top: 7px;
 }
 

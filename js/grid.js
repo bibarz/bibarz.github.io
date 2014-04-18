@@ -7,6 +7,10 @@ function Grid(size, previousState, value_jpg_refs) {
   }
   else {
       this.value_jpg_refs = {}
+      this.value_jpg_refs[-11] = 978;
+      this.value_jpg_refs[-12] = 979;
+      this.value_jpg_refs[-1] = 988;
+      this.value_jpg_refs[-2] = 989;
       this.value_jpg_refs[2] = 0 + Math.floor(Math.random() * 4);
       this.value_jpg_refs[4] = 4 + Math.floor(Math.random() * 3);
       this.value_jpg_refs[8] = 8 + Math.floor(Math.random() * 2);
