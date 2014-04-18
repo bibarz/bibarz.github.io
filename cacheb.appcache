@@ -6,10 +6,10 @@ CACHE MANIFEST
 # Updated: 2014-03-27T17:09:22+01:00
 
 # Main page
-index.html
+b.html
 
 # CSS
-style/main.css
+style/b.css
 
 # Fonts
 style/fonts/clear-sans.css
@@ -24,10 +24,10 @@ style/fonts/ClearSans-Regular-webfont.svg
 style/fonts/ClearSans-Regular-webfont.woff
 
 # Other resources
-tile-sets/maravillas/988-touch-icon.png
+tile-sets/standard/quill.png
 meta/icon_bitcoin.svg
 meta/icon_pp.svg
-tile-sets/maravillas/988.png
+tile-sets/standard/quill.png
 
 # JavaScript
 js/animframe_polyfill.js
@@ -35,13 +35,13 @@ js/application.js
 js/bind_polyfill.js
 js/classlist_polyfill.js
 js/game_manager.js
-js/grid.js
-js/html_actuator.js
+js/gridb.js
+js/html_actuatorb.js
 js/keyboard_input_manager.js
 js/local_storage_manager.js
 js/tile.js
 
-tile-sets/maravillas/988.ico
+tile-sets/standard/quill.ico
 
 NETWORK:
 *
