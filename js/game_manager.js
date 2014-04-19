@@ -75,6 +75,16 @@ GameManager.prototype.addStartTiles = function () {
   }
 };
 
+GameManager.prototype.canPlayOGG = function () {
+  var a = document.createElement('audio');
+  return !!(a.canPlayType && a.canPlayType('audio/ogg; codecs="vorbis"').replace(/no/, ''));
+}
+
+GameManager.prototype.canPlayAAC = function () {
+  var a = document.createElement('audio');
+  return !!(a.canPlayType && a.canPlayType('audio/mp4; codecs="mp4a.40.2"').replace(/no/, ''));
+}
+
 // Adds a tile in a random position
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
@@ -82,9 +92,15 @@ GameManager.prototype.addRandomTile = function () {
       var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
     if(value === -1 && this.grid.isMaravillas){
-      var sound = new Audio('tile-sets/maravillas/lasalle.wav');
-      sound.play();
-      }
+      if (this.canPlayOGG()) {
+        var sound = new Audio('tile-sets/maravillas/lasalle.ogg');
+        sound.play();
+        }
+      else if (this.canPlayAAC()) {
+          var sound = new Audio('tile-sets/maravillas/lasalle.mp4');
+          sound.play();
+        }
+    }
     this.grid.insertTile(tile);
   }
 };
