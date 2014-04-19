@@ -81,7 +81,10 @@ GameManager.prototype.addRandomTile = function () {
       var r = Math.random()
       var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
-
+    if(value === -1 && this.grid.isMaravillas){
+      var sound = new Audio('tile-sets/maravillas/lasalle.wav');
+      sound.play();
+      }
     this.grid.insertTile(tile);
   }
 };

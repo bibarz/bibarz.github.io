@@ -1,5 +1,5 @@
 function Grid(size, previousState, value_jpg_refs) {
-  init_array =
+  this.isMaravillas = 1;
   this.size = size;
   this.cells = previousState ? this.fromState(previousState) : this.empty();
   if (value_jpg_refs) {
