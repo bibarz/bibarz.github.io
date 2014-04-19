@@ -28,6 +28,7 @@ tile-sets/maravillas/988-touch-icon.png
 meta/icon_bitcoin.svg
 meta/icon_pp.svg
 tile-sets/maravillas/988.png
+tile-sets/maravillas/lasalle.wav
 
 # JavaScript
 js/animframe_polyfill.js
