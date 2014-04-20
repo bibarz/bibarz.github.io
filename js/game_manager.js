@@ -97,8 +97,8 @@ GameManager.prototype.playSound = function(sound_source) {
     else if (this.canPlayAAC()) sound_source = sound_source + '.mp4';
     var sound = new Audio(sound_source);
     sound.load();
-    sound.pause();
     sound.play();
+    sound.pause();
 };
 
 GameManager.prototype.addRandomTile = function () {
