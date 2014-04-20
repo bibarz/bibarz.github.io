@@ -102,7 +102,7 @@ GameManager.prototype.load_source = function(sound_source) {
 };
 
 GameManager.prototype.playSound = function(sound_source) {
-    if !!(this.sounds[sound_source]) this.load_source(sound_source);
+    if (!!(this.sounds[sound_source])) this.load_source(sound_source);
     this.sounds[sound_source].play();
 };
 
