@@ -109,12 +109,7 @@ GameManager.prototype.addRandomTile = function () {
         }
     }
     if(value === -2 && this.grid.isMaravillas){
-        if (this.canPlayMP3()) {
-            var sound = new Audio('tile-sets/maravillas/maravillas.mp3');
-            sound.load();
-            sound.play();
-        }
-        else if (this.canPlayOGG()) {
+      if (this.canPlayOGG()) {
             var sound = new Audio('tile-sets/maravillas/maravillas.ogg');
             sound.load();
             sound.play();
