@@ -78,58 +78,36 @@ GameManager.prototype.addStartTiles = function () {
 GameManager.prototype.canPlayMP3 = function () {
   var a = document.createElement('audio');
   return !!(a.canPlayType && a.canPlayType('audio/mpeg;').replace(/no/, ''));
-}
+};
 
 GameManager.prototype.canPlayOGG = function () {
   var a = document.createElement('audio');
   return !!(a.canPlayType && a.canPlayType('audio/ogg; codecs="vorbis"').replace(/no/, ''));
-}
+};
 
 GameManager.prototype.canPlayAAC = function () {
   var a = document.createElement('audio');
   return !!(a.canPlayType && a.canPlayType('audio/mp4; codecs="mp4a.40.2"').replace(/no/, ''));
-}
+};
 
-// Adds a tile in a random position
+GameManager.prototype.playSound = function(sound_source) {
+{
+    if (this.canPlayOGG()) sound_source = sound_source + '.ogg';
+    else if (this.canPlayMP3()) sound_source = sound_source + '.mp3';
+    else if (this.canPlayAAC()) sound_source = sound_source + '.mp4';
+    var sound = new Audio(sound_source);
+    sound.load();
+    sound.pause();
+    sound.play();
+};
+
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
-      var r = Math.random()
-      var value = r < 0.09 ? 2 : r < 0.0999 ? 4 : r < 0.49995 ? -1 : -2;
+    var r = Math.random()
+    var value = r < 0.09 ? 2 : r < 0.0999 ? 4 : r < 0.49995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
-    if(value === -1 && this.grid.isMaravillas){
-      if (this.canPlayOGG()) {
-        var sound = new Audio('tile-sets/maravillas/lasalle.ogg');
-        sound.load();
-        sound.play();
-        }
-      else if (this.canPlayMP3()) {
-          var sound = new Audio('tile-sets/maravillas/lasalle.mp3');
-          sound.load();
-          sound.play();
-      }
-      else if (this.canPlayAAC()) {
-          var sound = new Audio('tile-sets/maravillas/lasalle.mp4');
-          sound.load();
-          sound.play();
-        }
-    }
-    if(value === -2 && this.grid.isMaravillas){
-        if (this.canPlayOGG()) {
-            var sound = new Audio('tile-sets/maravillas/maravillas.ogg');
-            sound.load();
-            sound.play();
-        }
-        else if (this.canPlayMP3()) {
-            var sound = new Audio('tile-sets/maravillas/maravillas.mp3');
-            sound.load();
-            sound.play();
-        }
-        else if (this.canPlayAAC()) {
-            var sound = new Audio('tile-sets/maravillas/maravillas.mp4');
-            sound.load();
-            sound.play();
-        }
-    }
+    if(value === -1 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/lasalle');
+    if(value === -2 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/maravillas');
     this.grid.insertTile(tile);
   }
 };
