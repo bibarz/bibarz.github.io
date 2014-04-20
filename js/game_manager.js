@@ -98,6 +98,7 @@ GameManager.prototype.playSound = function(sound_source) {
     sound.load();
     sound.play();
     sound.pause();
+    sound.play();
 };
 
 GameManager.prototype.addRandomTile = function () {
