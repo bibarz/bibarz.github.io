@@ -97,6 +97,7 @@ GameManager.prototype.playSound = function(sound_source) {
     var sound = new Audio(sound_source);
     sound.load();
     sound.play();
+    sound.pause();
 };
 
 GameManager.prototype.addRandomTile = function () {
