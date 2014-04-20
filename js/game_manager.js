@@ -64,16 +64,7 @@ GameManager.prototype.setup = function () {
     this.addStartTiles();
   }
 
-    if((navigator.userAgent.match(/iPhone/i)) || (navigator.userAgent.match(/iPod/i)) || (navigator.userAgent.match(/iPad/i))) {
-        
-//        document.write('<a id="init" ontouchstart="javascript:sndInit();"></a>');
-        
-//        function sndInit(){
-//            snd.play();
-//            snd.pause();
-//            document.getElementById('init').style.display = 'none';
-//        }
-    }  // Update the actuator
+  // Update the actuator
   this.actuate();
 };
 
@@ -98,25 +89,29 @@ GameManager.prototype.canPlayAAC = function () {
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
       var r = Math.random()
-      var value = r < 0.09 ? 2 : r < 0.0999 ? 4 : r < 0.49995 ? -1 : -2;
+      var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
     if(value === -1 && this.grid.isMaravillas){
       if (this.canPlayOGG()) {
         var sound = new Audio('tile-sets/maravillas/lasalle.ogg');
+        sound.load();
         sound.play();
         }
       else if (this.canPlayAAC()) {
           var sound = new Audio('tile-sets/maravillas/lasalle.mp4');
+          sound.load();
           sound.play();
         }
     }
     if(value === -2 && this.grid.isMaravillas){
         if (this.canPlayOGG()) {
             var sound = new Audio('tile-sets/maravillas/maravillas.ogg');
+            sound.load();
             sound.play();
         }
         else if (this.canPlayAAC()) {
             var sound = new Audio('tile-sets/maravillas/maravillas.mp4');
+            sound.load();
             sound.play();
         }
     }
