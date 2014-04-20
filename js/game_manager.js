@@ -64,7 +64,16 @@ GameManager.prototype.setup = function () {
     this.addStartTiles();
   }
 
-  // Update the actuator
+    if((navigator.userAgent.match(/iPhone/i)) || (navigator.userAgent.match(/iPod/i)) || (navigator.userAgent.match(/iPad/i))) {
+        
+        document.write('<a id="init" ontouchstart="javascript:sndInit();"></a>');
+        
+        function sndInit(){
+            snd.play();
+            snd.pause();
+            document.getElementById('init').style.display = 'none';
+        }
+    }  // Update the actuator
   this.actuate();
 };
 
