@@ -96,10 +96,10 @@ GameManager.prototype.load_source = function(sound_source) {
   else if (this.canPlayMP3()) sound_file = sound_source + '.mp3';
   else if (this.canPlayAAC()) sound_file = sound_source + '.mp4';
   this.sounds[sound_source] = new Audio(sound_file);
-  this.sounds[sound_source].load()
+  this.sounds[sound_source].load();
   this.sounds[sound_source].play();
   this.sounds[sound_source].pause();
-}
+};
 
 GameManager.prototype.playSound = function(sound_source) {
     if !!(this.sounds[sound_source]) this.load_source(sound_source);
