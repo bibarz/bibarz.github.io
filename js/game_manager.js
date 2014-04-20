@@ -89,7 +89,7 @@ GameManager.prototype.canPlayAAC = function () {
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
       var r = Math.random()
-      var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
+      var value = r < 0.09 ? 2 : r < 0.0999 ? 4 : r < 0.49995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
     if(value === -1 && this.grid.isMaravillas){
       if (this.canPlayOGG()) {
@@ -99,6 +99,16 @@ GameManager.prototype.addRandomTile = function () {
       else if (this.canPlayAAC()) {
           var sound = new Audio('tile-sets/maravillas/lasalle.mp4');
           sound.play();
+        }
+    }
+    if(value === -2 && this.grid.isMaravillas){
+        if (this.canPlayOGG()) {
+            var sound = new Audio('tile-sets/maravillas/maravillas.ogg');
+            sound.play();
+        }
+        else if (this.canPlayAAC()) {
+            var sound = new Audio('tile-sets/maravillas/maravillas.mp4');
+            sound.play();
         }
     }
     this.grid.insertTile(tile);
