@@ -91,7 +91,6 @@ GameManager.prototype.canPlayAAC = function () {
 };
 
 GameManager.prototype.playSound = function(sound_source) {
-{
     if (this.canPlayOGG()) sound_source = sound_source + '.ogg';
     else if (this.canPlayMP3()) sound_source = sound_source + '.mp3';
     else if (this.canPlayAAC()) sound_source = sound_source + '.mp4';
