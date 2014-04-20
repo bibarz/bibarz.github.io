@@ -5,6 +5,7 @@ function GameManager(size, InputManager, Actuator, StorageManager) {
   this.actuator       = new Actuator;
 
   this.startTiles     = 2;
+  this.sounds     = {};
 
   this.inputManager.on("move", this.move.bind(this));
   this.inputManager.on("restart", this.restart.bind(this));
@@ -90,15 +91,19 @@ GameManager.prototype.canPlayAAC = function () {
   return !!(a.canPlayType && a.canPlayType('audio/mp4; codecs="mp4a.40.2"').replace(/no/, ''));
 };
 
+GameManager.prototype.load_source = function(sound_source) {
+  if (this.canPlayOGG()) sound_file = sound_source + '.ogg';
+  else if (this.canPlayMP3()) sound_file = sound_source + '.mp3';
+  else if (this.canPlayAAC()) sound_file = sound_source + '.mp4';
+  this.sounds[sound_source] = new Audio(sound_file);
+  this.sounds[sound_source].load()
+  this.sounds[sound_source].play();
+  this.sounds[sound_source].pause();
+}
+
 GameManager.prototype.playSound = function(sound_source) {
-    if (this.canPlayOGG()) sound_source = sound_source + '.ogg';
-    else if (this.canPlayMP3()) sound_source = sound_source + '.mp3';
-    else if (this.canPlayAAC()) sound_source = sound_source + '.mp4';
-    var sound = new Audio(sound_source);
-    sound.load();
-    sound.play();
-    sound.pause();
-    sound.play();
+    if !!(this.sounds[sound_source]) this.load_source(sound_source);
+    this.sounds[sound_source].play();
 };
 
 GameManager.prototype.addRandomTile = function () {
