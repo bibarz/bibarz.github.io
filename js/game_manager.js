@@ -107,7 +107,7 @@ GameManager.prototype.playSound = function(sound_source) {
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
     var r = Math.random()
-    var value = r < 0.09 ? 2 : r < 0.0999 ? 4 : r < 0.49995 ? -1 : -2;
+    var value = r < 0.9 ? 2 : r < 0.999 ? 4 : r < 0.9995 ? -1 : -2;
     var tile = new Tile(this.grid.randomAvailableCell(), value);
     if(value === -1 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/lasalle');
     if(value === -2 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/maravillas');
