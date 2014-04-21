@@ -102,7 +102,7 @@ GameManager.prototype.load_source = function(sound_source) {
 GameManager.prototype.playSound = function(sound_source) {
     if (!(sound_source in this.sounds)) this.load_source(sound_source);
     var s = this.sounds[sound_source];
-    setTimeout(function () {s.play();}, 50);
+    setTimeout(function () {s.play();}, 500);
 };
 
 GameManager.prototype.addRandomTile = function () {
