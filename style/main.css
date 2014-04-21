@@ -511,6 +511,24 @@ hr {
     color: rgba(0,0,0,0);
     font-size: 14px;
   }
+  .tile.tile-33 .tile-inner {
+    background: url('../tile-sets/maravillas/cmanzano.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    font-size: 14px;
+  }
+  .tile.tile-34 .tile-inner {
+    background: url('../tile-sets/maravillas/cfracata.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    font-size: 14px;
+  }
+  .tile.tile-35 .tile-inner {
+    background: url('../tile-sets/maravillas/cdonavelino.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    font-size: 14px;
+  }
   .tile.tile-64 .tile-inner {
     background: url('../tile-sets/maravillas/cteo.jpg');
     background-size: 100%;
@@ -555,7 +573,25 @@ hr {
     box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.31746), inset 0 0 0 1px rgba(255, 255, 255, 0.19048);
     font-size: 14px; }
     @media screen and (max-width: 520px) {
-      .tile.tile-256 .tile-inner {
+      .tile.tile-257 .tile-inner {
+        font-size: 16px; } }
+  .tile.tile-258 .tile-inner {
+    background: url('../tile-sets/maravillas/cbenito.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.31746), inset 0 0 0 1px rgba(255, 255, 255, 0.19048);
+    font-size: 14px; }
+    @media screen and (max-width: 520px) {
+      .tile.tile-258 .tile-inner {
+        font-size: 16px; } }
+  .tile.tile-259 .tile-inner {
+    background: url('../tile-sets/maravillas/cfelix.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.31746), inset 0 0 0 1px rgba(255, 255, 255, 0.19048);
+    font-size: 14px; }
+    @media screen and (max-width: 520px) {
+      .tile.tile-259 .tile-inner {
         font-size: 16px; } }
   .tile.tile-512 .tile-inner {
     background: url('../tile-sets/maravillas/cinaki.jpg');
@@ -574,6 +610,15 @@ hr {
     font-size: 10px; }
     @media screen and (max-width: 520px) {
       .tile.tile-1024 .tile-inner {
+        font-size: 10px; } }
+  .tile.tile-1025 .tile-inner {
+    background: url('../tile-sets/maravillas/chnoalejandro.jpg');
+    background-size: 100%;
+    color: rgba(0,0,0,0);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.47619), inset 0 0 0 1px rgba(255, 255, 255, 0.28571);
+    font-size: 10px; }
+    @media screen and (max-width: 520px) {
+      .tile.tile-1025 .tile-inner {
         font-size: 10px; } }
   .tile.tile-2048 .tile-inner {
     background: url('../tile-sets/maravillas/chnofeliciano.jpg');
