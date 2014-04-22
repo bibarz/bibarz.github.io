@@ -19,7 +19,7 @@ function Grid(size, previousState, value_jpg_refs) {
       this.value_jpg_refs[64] = 64 + Math.floor(Math.random() * 4);
       this.value_jpg_refs[128] = 128 + Math.floor(Math.random() * 2);
       this.value_jpg_refs[256] = 256 + Math.floor(Math.random() * 4);
-      this.value_jpg_refs[512] = 512 + Math.floor(Math.random() * 4);
+      this.value_jpg_refs[512] = 512 + Math.floor(Math.random() * 5);
       this.value_jpg_refs[1024] = 1024 + Math.floor(Math.random() * 2);
       this.value_jpg_refs[2048] = 2048;
       this.value_jpg_refs[4096] = 4096;
