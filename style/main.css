@@ -20,12 +20,10 @@ span.tile-text {
   line-height: 1.25;
 }
 
-<style>
-#HCB_comment_box textarea {
+.HCB_comment_box textarea {
 height:400px;
 width:600px;
 }
-</style>
 
 input {
   display: inline-block;
