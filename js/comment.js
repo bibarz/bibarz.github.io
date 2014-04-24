@@ -31,7 +31,7 @@ hours_ago:'horas atr\u00E1s',
 minutes_ago:'minutos antes',
 within_the_last_minute:'hace nada',
     
-msg_thankyou:'Gracias',
+msg_thankyou:'Gracias por tu comentario.',
 msg_approval:'(comentario pendiente de que lo aprueben las altas esferas)',
 msg_approval_required:'En cuanto el moderador se ponga a ello te publica el comentario.',
     
