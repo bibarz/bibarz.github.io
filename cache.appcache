@@ -41,6 +41,7 @@ js/html_actuator.js
 js/keyboard_input_manager.js
 js/local_storage_manager.js
 js/tile.js
+js/comment.js
 
 tile-sets/maravillas/988.ico
 
