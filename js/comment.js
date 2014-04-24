@@ -18,7 +18,7 @@ website_label:'website (opcional)',
 email_label:'email',
 anonymous:'An\u00f3nimo',
 mod_label:'(moderador)',
-subscribe:'email si responden',
+subscribe:'m\u00E1ndame un email si responden',
 are_you_sure:'\u00BFTe parece mal este comentario?',
     
 reply:'<img src="//www.htmlcommentbox.com/static/images/reply.png"/> responder',

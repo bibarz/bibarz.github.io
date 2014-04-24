@@ -31,10 +31,7 @@ div.comment {
 input[type=checkbox]
 {
   /* Double-sized Checkboxes */
-  -ms-transform: scale(2); /* IE */
-  -moz-transform: scale(2); /* FF */
-  -webkit-transform: scale(2); /* Safari and Chrome */
-  -o-transform: scale(2); /* Opera */
+  -webkit-transform: scale(4); /* Safari and Chrome */
   padding: 10px;
 }
 
