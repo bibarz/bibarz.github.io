@@ -149,5 +149,5 @@ KeyboardInputManager.prototype.bindButtonPress = function (selector, fn) {
 };
 
 KeyboardInputManager.prototype.targetIsInput = function (event) {
-  return event.target.tagName.toLowerCase() === "input";
+  return ((event.target.tagName.toLowerCase() === "input") || (event.target.tagName.toLowerCase() === "textarea"));
 };
