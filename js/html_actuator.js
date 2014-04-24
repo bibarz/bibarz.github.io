@@ -173,7 +173,7 @@ HTMLActuator.prototype.scoreTweetButton = function () {
   tweet.setAttribute("href", "https://twitter.com/share");
   tweet.textContent = "Tweet";
 
-  var text = "" + this.score + " puntos en 98^8!"
+  var text = "Me he hecho " + this.score + " puntos en 98^8, nada menos."
   tweet.setAttribute("data-text", text);
 
   return tweet;
