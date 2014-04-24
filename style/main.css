@@ -28,32 +28,6 @@ div.comment {
   margin: 0px 5px;
 }
 
-input[type=checkbox]
-{
-  /* Double-sized Checkboxes */
-  -webkit-transform: scale(4); /* Safari and Chrome */
-  padding: 10px;
-}
-
-input {
-  display: inline-block;
-  background: #8f7a66;
-  border-radius: 3px;
-  padding: 0 20px;
-  text-decoration: none;
-  color: #f9f6f2;
-  height: 40px;
-  line-height: 42px;
-  cursor: pointer;
-  font: inherit;
-  border: none;
-  outline: none;
-  box-sizing: border-box;
-  font-weight: bold;
-  margin: 0;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none; }
   input[type="text"], input[type="email"] {
     cursor: auto;
     background: #fcfbf9;
