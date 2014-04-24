@@ -19,7 +19,7 @@ email_label:'email',
 anonymous:'An\u00f3nimo',
 mod_label:'(moderador)',
 subscribe:'m\u00E1ndame un email si me responden',
-are_you_sure:'\U00BFTe parece mal este comentario?',
+are_you_sure:'\u00BFTe parece mal este comentario?',
     
 reply:'<img src="//www.htmlcommentbox.com/static/images/reply.png"/> responder',
 flag:'<img src="//www.htmlcommentbox.com/static/images/flag.png"/> flag',
