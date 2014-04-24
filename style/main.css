@@ -24,6 +24,10 @@ div.comment {
  font-size:14px;
 }
 
+.gravatar {
+  margin: 10px 10 px;
+}
+
 input {
   display: inline-block;
   background: #8f7a66;

@@ -28,7 +28,7 @@ like:'<img src="//www.htmlcommentbox.com/static/images/like.png"/> like',
     //dates
 days_ago:'d\u00EDas ha',
 hours_ago:'horas atr\u00E1s',
-minutes_ago:'minutos antes',
+minutes_ago:'minutos atr\u00E1s',
 within_the_last_minute:'hace nada',
     
 msg_thankyou:'Gracias por tu comentario.',
