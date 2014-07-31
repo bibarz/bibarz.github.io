@@ -54,11 +54,11 @@ HTMLActuator.prototype.addTile = function (tile, value_jpg_refs) {
   var valueMap = {
     2 :    'Clara',
     4 :    'Juan',
-    8 :    'T<&iacute>o Ignacio',
-    16 :   'T<&iacute>o Borja',
-    32 :   'T<&iacute>o Carlos',
-    64 :   'Mam<&aacute>',
-    128 :   'Pap<&aacute>',
+    8 :    'Tío Ignacio',
+    16 :   'Tío Borja',
+    32 :   'Tío Carlos',
+    64 :   'Mamá',
+    128 :   'Papá',
     256 :  'Los abuelos',
   }
   var self = this;
