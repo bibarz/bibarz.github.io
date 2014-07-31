@@ -1,0 +1,46 @@
+CACHE MANIFEST
+
+# Adds the ability to play the game online.
+# The following comment needs to be updated whenever a change is made.
+# Run `rake appcache:update` to do so
+# Updated: 2014-03-27T17:09:22+01:00
+
+# Main page
+ccj.html
+
+# CSS
+style/ccj.css
+
+# Fonts
+style/fonts/clear-sans.css
+style/fonts/ClearSans-Bold-webfont.eot
+style/fonts/ClearSans-Bold-webfont.svg
+style/fonts/ClearSans-Bold-webfont.woff
+style/fonts/ClearSans-Light-webfont.eot
+style/fonts/ClearSans-Light-webfont.svg
+style/fonts/ClearSans-Light-webfont.woff
+style/fonts/ClearSans-Regular-webfont.eot
+style/fonts/ClearSans-Regular-webfont.svg
+style/fonts/ClearSans-Regular-webfont.woff
+
+# Other resources
+meta/icon_bitcoin.svg
+meta/icon_pp.svg
+tile-sets/ccj/ccj.png
+
+# JavaScript
+js/animframe_polyfill.js
+js/application.js
+js/bind_polyfill.js
+js/classlist_polyfill.js
+js/game_manager.js
+js/gridccj.js
+js/html_actuatorccj.js
+js/keyboard_input_manager.js
+js/local_storage_manager.js
+js/tile.js
+
+tile-sets/ccj/ccj.ico
+
+NETWORK:
+*

@@ -111,6 +111,7 @@ GameManager.prototype.addRandomTile = function () {
     var tile = new Tile(this.grid.randomAvailableCell(), value);
     if(value === -1 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/lasalle');
     if(value === -2 && this.grid.isMaravillas) this.playSound('tile-sets/maravillas/maravillas');
+    if((value === -1 || value===-2) && this.grid.isCcj) this.playSound('tile-sets/ccj/spiderman');
     this.grid.insertTile(tile);
   }
 };
@@ -218,7 +219,7 @@ GameManager.prototype.move = function (direction) {
           self.score += merged.value;
 
           // The mighty 2048 tile
-          if (merged.value === 2048) self.won = true;
+          if ((merged.value === 2048 && !self.grid.isCcj) || (merged.value === 256 && self.grid.isCcj)) self.won = true;
         } else {
           self.moveTile(tile, positions.farthest);
         }
