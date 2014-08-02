@@ -466,10 +466,10 @@ hr {
     background-size: 100%;
     color: rgba(0,0,0,0);
     box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.4581), inset 0 0 0 1px rgba(255, 255, 255, 0.3386);
-    font-size: 12px; }
+    font-size: 13px; }
     @media screen and (max-width: 520px) {
-      .tile.tile-128 .tile-inner {
-        font-size: 12px; } }
+      .tile.tile-64 .tile-inner {
+        font-size: 13px; } }
   .tile.tile-128 .tile-inner {
     background: url('../tile-sets/ccj/javier.jpg');
     background-size: 100%;
@@ -477,7 +477,7 @@ hr {
     box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.46683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
     font-size: 13px; }
     @media screen and (max-width: 520px) {
-      .tile.tile-512 .tile-inner {
+      .tile.tile-128 .tile-inner {
         font-size: 13px; } }
   .tile.tile-129 .tile-inner {
     background: url('../tile-sets/ccj/javier2.jpg');
@@ -486,7 +486,7 @@ hr {
     box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.46683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
     font-size: 13px; }
     @media screen and (max-width: 520px) {
-      .tile.tile-512 .tile-inner {
+      .tile.tile-129 .tile-inner {
         font-size: 13px; } }
   .tile.tile-256 .tile-inner {
     background: url('../tile-sets/ccj/abuelos.jpg');
@@ -495,7 +495,7 @@ hr {
     box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.55556), inset 0 0 0 1px rgba(255, 255, 255, 0.38333);
     font-size: 10px; }
     @media screen and (max-width: 520px) {
-      .tile.tile-2048 .tile-inner {
+      .tile.tile-256 .tile-inner {
         font-size: 10px; } }
   .tile.tile-super .tile-inner {
     color: #f9f6f2;
