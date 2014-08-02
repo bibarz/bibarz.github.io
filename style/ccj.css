@@ -448,14 +448,14 @@ hr {
     font-size: 11px;
   }
   .tile.tile-16 .tile-inner {
-    background: url('../tile-sets/ccj/borja.jpg');
+    background: url('../tile-sets/ccj/carlos.jpg');
     background-size: 100%;
     color: rgba(0,0,0,0);
     font-weight: medium;
     font-size: 10px;
   }
   .tile.tile-32 .tile-inner {
-    background: url('../tile-sets/ccj/carlos.jpg');
+    background: url('../tile-sets/ccj/borja.jpg');
     background-size: 100%;
     color: rgba(0,0,0,0);
     font-size: 14px;
