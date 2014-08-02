@@ -465,7 +465,7 @@ hr {
     background: url('../tile-sets/ccj/natalia.jpg');
     background-size: 100%;
     color: rgba(0,0,0,0);
-    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.4281), inset 0 0 0 1px rgba(255, 255, 255, 0.29286);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.4581), inset 0 0 0 1px rgba(255, 255, 255, 0.3386);
     font-size: 12px; }
     @media screen and (max-width: 520px) {
       .tile.tile-128 .tile-inner {
@@ -474,7 +474,7 @@ hr {
     background: url('../tile-sets/ccj/javier.jpg');
     background-size: 100%;
     color: rgba(0,0,0,0);
-    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.48683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.46683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
     font-size: 13px; }
     @media screen and (max-width: 520px) {
       .tile.tile-512 .tile-inner {
@@ -483,7 +483,7 @@ hr {
     background: url('../tile-sets/ccj/javier2.jpg');
     background-size: 100%;
     color: rgba(0,0,0,0);
-    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.48683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
+    box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.46683), inset 0 0 0 1px rgba(255, 255, 255, 0.3381);
     font-size: 13px; }
     @media screen and (max-width: 520px) {
       .tile.tile-512 .tile-inner {
