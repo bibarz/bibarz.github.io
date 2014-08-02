@@ -26,7 +26,7 @@ style/fonts/ClearSans-Regular-webfont.woff
 # Other resources
 meta/icon_bitcoin.svg
 meta/icon_pp.svg
-tile-sets/ccj/ccj.png
+tile-sets/ccj/*
 
 # JavaScript
 js/animframe_polyfill.js
