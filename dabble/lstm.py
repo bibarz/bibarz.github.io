@@ -43,25 +43,30 @@ def compile_data(folder):
 
 
 class Encoder(object):
-    def __init__(self):
-        self.charlist = ['.', ',', ';', ':', '/', "'", '"', '(', ')', '\r', chr(151), ]
-        self.vocabulary_size = len(self.charlist) + 1 + ord('z') - ord('a') + 1
+    def __init__(self, data, default_char=ord(' '), min_freq=1e-4):
+        '''
+        data should be a uint8 np array from a string. From it we deduce
+        the existing characters, and the very unusual ones (frequency less
+        than min_freq) get mapped to default_char (which should be in the data)
+        '''
+        chars, idx = np.unique(data, return_inverse=True)
+        counts = np.bincount(idx)
+        freqs = counts / np.sum(counts).astype(np.float)
+        order = np.argsort(freqs)[::-1]
+        chars, counts, freqs = chars[order], counts[order], freqs[order]
+        unfreq = freqs < min_freq
+        assert default_char in chars[~unfreq]
+        self._decoder = chars[~unfreq]
+        self._encoder = np.zeros(np.amax(chars) + 1, dtype=chars.dtype)
+        self._encoder[chars[~unfreq]] = np.arange(np.sum(~unfreq))
+        self._encoder[chars[unfreq]] = self._encoder[default_char]
+        self.vocabulary_size = len(self._decoder)
 
     def char2id(self, chars):
-        ids = np.zeros_like(chars)
-        for i, c in enumerate(self.charlist):
-            ids[chars == ord(c)] = i + 1
-        alphanum = (chars >= ord('a')) & (chars <= ord('z'))
-        ids[alphanum] = chars[alphanum] - ord('a') + len(self.charlist) + 1
-        return ids
+        return self._encoder[chars]
 
-    def id2char(self, single_id):
-        if single_id == 0:
-            return ' '
-        elif single_id <= len(self.charlist):
-            return self.charlist[single_id - 1]
-        else:
-            return chr(single_id - len(self.charlist) - 1 + ord('a'))
+    def id2char(self, ids):
+        return self._decoder[ids]
 
 
 def batch_generator(text, batch_size, num_unrollings, encoder, unroll_shift):
@@ -78,95 +83,117 @@ def batch_generator(text, batch_size, num_unrollings, encoder, unroll_shift):
 
 
 def characters(probabilities, encoder):
-  """Turn a 1-hot encoding or a probability distribution over the possible
-  characters back into its (most likely) character representation."""
-  return [encoder.id2char(c) for c in np.argmax(probabilities, 1)]
+    """Turn a 1-hot encoding or a probability distribution over the possible
+    characters back into its (most likely) character representation."""
+    return encoder.id2char(np.argmax(probabilities, -1))
 
 
-def batches2string(batches, encoder):
-  """Convert a sequence of batches back into their (most likely) string
-  representation."""
-  s = [''] * batches[0].shape[0]
-  for b in batches:
-    s = [''.join(x) for x in zip(s, characters(b, encoder))]
-  return s
+def print_batches(batches, encoder):
+    """Convert a sequence of batches back into their (most likely) string
+    representation."""
+    str_batch = [s.tostring() for s in characters(batches, encoder).T]
+    for s in str_batch:
+        print s.decode('mac-roman'), ':::',
+    print
 
 
 def logprob(predictions, labels):
-  """Log-probability of the true labels in a predicted batch."""
-  predictions[predictions < 1e-10] = 1e-10
-  return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
+    """Log-probability of the true labels in a predicted batch."""
+    predictions[predictions < 1e-10] = 1e-10
+    return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
 
 
 def sample_distribution(distribution):
-  """Sample one element from a distribution assumed to be an array of normalized
-  probabilities.
-  """
-  r = random.uniform(0, 1)
-  s = 0
-  for i in range(len(distribution)):
-    s += distribution[i]
-    if s >= r:
-      return i
-  return len(distribution) - 1
+    """Sample one element from a distribution assumed to be an array of normalized
+    probabilities.
+    """
+    r = random.uniform(0, 1)
+    s = 0
+    for i in range(len(distribution)):
+        s += distribution[i]
+        if s >= r:
+            return i
+    return len(distribution) - 1
 
 
 def sample(prediction, vocabulary_size):
-  """Turn a (column) prediction into 1-hot encoded samples."""
-  p = np.zeros(shape=[1, vocabulary_size], dtype=np.float)
-  p[0, sample_distribution(prediction[0])] = 1.0
-  return p
+    """Turn a (column) prediction into 1-hot encoded samples."""
+    p = np.zeros(shape=[1, vocabulary_size], dtype=np.float)
+    p[0, sample_distribution(prediction[0])] = 1.0
+    return p
 
 
 def random_distribution(vocabulary_size):
-  """Generate a random column of probabilities."""
-  b = np.random.uniform(0.0, 1.0, size=[1, vocabulary_size])
-  return b/np.sum(b, 1)[:,None]
+    """Generate a random column of probabilities."""
+    b = np.random.uniform(0.0, 1.0, size=[1, vocabulary_size])
+    return b/np.sum(b, 1)[:,None]
+
+
+def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_size):
+    # Parameters:
+    # Input gate: input, previous output, and bias.
+    stddev = 0.1 / np.sqrt(n_nodes)
+    ix = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
+    im = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
+    ib = tf.Variable(tf.zeros([1, n_nodes]))
+    # Forget gate: input, previous output, and bias.
+    fx = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
+    fm = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
+    fb = tf.Variable(tf.zeros([1, n_nodes]))
+    # Memory cell: input, state and bias.
+    cx = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
+    cm = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
+    cb = tf.Variable(tf.zeros([1, n_nodes]))
+    # Output gate: input, previous output, and bias.
+    ox = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
+    om = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
+    ob = tf.Variable(tf.zeros([1, n_nodes]))
+    # Variables saving state across unrollings.
+    saved_output = tf.Variable(tf.zeros([batch_size, n_nodes]), trainable=False)
+    saved_state = tf.Variable(tf.zeros([batch_size, n_nodes]), trainable=False)
+    # Classifier weights and biases.
+    w = tf.Variable(tf.truncated_normal([n_nodes, next_n_nodes], mean=0., stddev=stddev))
+    b = tf.Variable(tf.zeros([next_n_nodes]))
+
+    def lstm_cell(i, o, state):
+        """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
+        Note that in this formulation, we omit the various connections between the
+        previous state and the gates."""
+        input_gate = tf.sigmoid(tf.matmul(i, ix) + tf.matmul(o, im) + ib)
+        forget_gate = tf.sigmoid(tf.matmul(i, fx) + tf.matmul(o, fm) + fb)
+        update = tf.matmul(i, cx) + tf.matmul(o, cm) + cb
+        state = forget_gate * state + input_gate * tf.tanh(update)
+        output_gate = tf.sigmoid(tf.matmul(i, ox) + tf.matmul(o, om) + ob)
+        return output_gate * tf.tanh(state), state
+
+    # Unrolled LSTM loop.
+    outputs = list()
+    states = list()
+    next_inputs = list()
+    output = saved_output
+    state = saved_state
+    for i in inputs:
+        output, state = lstm_cell(i, output, state)
+        outputs.append(output)
+        states.append(state)
+        next_inputs.append(tf.nn.xw_plus_b(output, w, b))
+
+    saved_sample_output = tf.Variable(tf.zeros([1, n_nodes]))
+    saved_sample_state = tf.Variable(tf.zeros([1, n_nodes]))
+    sample_output, sample_state = lstm_cell(
+        sample_input, saved_sample_output, saved_sample_state)
+    next_sample_input = tf.nn.xw_plus_b(sample_output, w, b)
+    return outputs, states, next_inputs, saved_output, saved_state,\
+        sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state
 
 
 def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
     assert 0 <= unroll_shift < num_unrollings
-    num_nodes = 128
+    n_nodes = [256, 256]
+    n_layers = len(n_nodes)
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
-
-        # Parameters:
-        # Input gate: input, previous output, and bias.
-        ix = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-        im = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
-        ib = tf.Variable(tf.zeros([1, num_nodes]))
-        # Forget gate: input, previous output, and bias.
-        fx = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-        fm = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
-        fb = tf.Variable(tf.zeros([1, num_nodes]))
-        # Memory cell: input, state and bias.
-        cx = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-        cm = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
-        cb = tf.Variable(tf.zeros([1, num_nodes]))
-        # Output gate: input, previous output, and bias.
-        ox = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-        om = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
-        ob = tf.Variable(tf.zeros([1, num_nodes]))
-        # Variables saving state across unrollings.
-        saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-        saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-        # Classifier weights and biases.
-        w = tf.Variable(tf.truncated_normal([num_nodes, vocabulary_size], -0.1, 0.1))
-        b = tf.Variable(tf.zeros([vocabulary_size]))
-
-        def lstm_cell(i, o, state):
-            """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
-            Note that in this formulation, we omit the various connections between the
-            previous state and the gates."""
-            input_gate = tf.sigmoid(tf.matmul(i, ix) + tf.matmul(o, im) + ib)
-            forget_gate = tf.sigmoid(tf.matmul(i, fx) + tf.matmul(o, fm) + fb)
-            update = tf.matmul(i, cx) + tf.matmul(o, cm) + cb
-            state = forget_gate * state + input_gate * tf.tanh(update)
-            output_gate = tf.sigmoid(tf.matmul(i, ox) + tf.matmul(o, om) + ob)
-            return output_gate * tf.tanh(state), state
-
-
         # Input data.
         things['train_data'] = list()
         for _ in range(num_unrollings + 1):
@@ -174,25 +201,33 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
               tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size]))
         train_inputs = things['train_data'][:num_unrollings]
         train_labels = things['train_data'][1:]  # labels are inputs shifted by one time step.
+        things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size])
 
-        # Unrolled LSTM loop.
-        outputs = list()
-        states = list()
-        output = saved_output
-        state = saved_state
-        for i in train_inputs:
-            output, state = lstm_cell(i, output, state)
-            outputs.append(output)
-            states.append(state)
+        all_n_nodes = [vocabulary_size] + n_nodes + [vocabulary_size]
+        assignments = []
+        sample_init_assignments = []
+        sample_assignments = []
+        next_inputs = train_inputs
+        next_sample_input = things['sample_input']
+        for j in range(1, n_layers + 1):
+            outputs, states, next_inputs, saved_output, saved_state,\
+                sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state =\
+                lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j], all_n_nodes[j+1], batch_size)
+            assignments.append(saved_output.assign(outputs[unroll_shift]))
+            assignments.append(saved_state.assign(states[unroll_shift]))
+            sample_assignments.append(saved_sample_output.assign(sample_output))
+            sample_assignments.append(saved_sample_state.assign(sample_state))
+            sample_init_assignments.append(saved_sample_output.assign(tf.zeros([1, all_n_nodes[j]])))
+            sample_init_assignments.append(saved_sample_state.assign(tf.zeros([1, all_n_nodes[j]])))
 
-        # State saving across unrollings.
-        with tf.control_dependencies([saved_output.assign(outputs[unroll_shift]),
-                                      saved_state.assign(states[unroll_shift])]):
-            # Classifier.
-            logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
+        all_logits = tf.concat(0, next_inputs)
+        all_labels = tf.concat(0, train_labels)
+        with tf.control_dependencies(assignments):  # make sure we save output and state before computing loss?
             things['loss'] = tf.reduce_mean(
-              tf.nn.softmax_cross_entropy_with_logits(
-                logits, tf.concat(0, train_labels)))
+              tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
+        with tf.control_dependencies(sample_assignments):
+            things['sample_prediction'] = tf.nn.softmax(next_sample_input)
+        things['reset_sample_state'] = tf.group(*sample_init_assignments)
 
         # Optimizer.
         global_step = tf.Variable(0)
@@ -205,20 +240,9 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
             zip(gradients, v), global_step=global_step)
 
         # Predictions.
-        things['train_prediction'] = tf.nn.softmax(logits)
+        things['train_prediction'] = tf.nn.softmax(all_logits)
 
         # Sampling and validation eval: batch 1, no unrolling.
-        things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size])
-        saved_sample_output = tf.Variable(tf.zeros([1, num_nodes]))
-        saved_sample_state = tf.Variable(tf.zeros([1, num_nodes]))
-        things['reset_sample_state'] = tf.group(
-            saved_sample_output.assign(tf.zeros([1, num_nodes])),
-            saved_sample_state.assign(tf.zeros([1, num_nodes])))
-        sample_output, sample_state = lstm_cell(
-            things['sample_input'], saved_sample_output, saved_sample_state)
-        with tf.control_dependencies([saved_sample_output.assign(sample_output),
-                                      saved_sample_state.assign(sample_state)]):
-            things['sample_prediction'] = tf.nn.softmax(tf.nn.xw_plus_b(sample_output, w, b))
     return things
 
 
@@ -228,14 +252,16 @@ def lstm_demo():
 #    text = np.fromstring(read_data(filename), dtype=np.uint8)
     folder = '/media/psf/Home/Downloads/asimo'
     text = np.fromstring(compile_data(folder), dtype=np.uint8)
+    text[text==ord('\r')] = ord('\n')
     print('Data size %d' % len(text))
     valid_size = 5000
     valid_text = text[:valid_size]
     train_text = text[valid_size:]
     train_size = len(train_text)
-    print(train_size, train_text[:64].tostring())
-    print(valid_size, valid_text[:64].tostring())
-    encoder = Encoder()
+    print train_size, train_text[:64].tostring().decode('mac-roman')
+    print valid_size, valid_text[:64].tostring().decode('mac-roman')
+    encoder = Encoder(text)
+    print('Vocabulary size %d' % encoder.vocabulary_size)
     batch_size=60
     num_unrollings=50
     unroll_shift = num_unrollings - 1
@@ -243,13 +269,13 @@ def lstm_demo():
     train_batches = batch_generator(train_text, batch_size, num_unrollings, encoder, unroll_shift)
     valid_batches = batch_generator(valid_text, 1, 1, encoder, 0)
 
-    print(batches2string(train_batches.next(), encoder))
-    print(batches2string(train_batches.next(), encoder))
-    print(batches2string(valid_batches.next(), encoder))
-    print(batches2string(valid_batches.next(), encoder))
+    print_batches(train_batches.next(), encoder)
+    print_batches(train_batches.next(), encoder)
+    print_batches(valid_batches.next(), encoder)
+    print_batches(valid_batches.next(), encoder)
 
-    num_steps = 100001
-    summary_frequency = 1000
+    num_steps = 10001
+    summary_frequency = 100
     things = model(vocabulary_size=encoder.vocabulary_size, num_unrollings=num_unrollings,
                    batch_size=batch_size, unroll_shift=unroll_shift)
 
@@ -278,13 +304,13 @@ def lstm_demo():
                     print('=' * 80)
                     for _ in range(5):
                         feed = sample(random_distribution(encoder.vocabulary_size), encoder.vocabulary_size)
-                        sentence = characters(feed, encoder)[0]
+                        sentence = characters(feed, encoder).T[0].tostring()
                         things['reset_sample_state'].run()
                         for _ in range(79):
                             prediction = things['sample_prediction'].eval({things['sample_input']: feed})
                             feed = sample(prediction, vocabulary_size=encoder.vocabulary_size)
-                            sentence += characters(feed, encoder)[0]
-                        print(sentence)
+                            sentence += characters(feed, encoder).T[0].tostring()
+                        print sentence.decode('mac-roman')
                     print('=' * 80)
                     # Measure validation set perplexity.
                     things['reset_sample_state'].run()
