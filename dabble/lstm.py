@@ -1,10 +1,9 @@
 import os
 import numpy as np
-import random
-import string
 import tensorflow as tf
 import zipfile
 from six.moves.urllib.request import urlretrieve
+import time
 
 
 def maybe_download(url, filename, expected_bytes):
@@ -287,10 +286,11 @@ def lstm_demo():
     with tf.Session(graph=things['graph']) as session:
         summary = tf.scalar_summary("loss", things['loss'])
         merged = tf.merge_all_summaries()
-        writer = tf.train.SummaryWriter("/tmp/mnist_logs", session.graph_def)
+        writer = tf.train.SummaryWriter("/tmp/lstm_logs", session.graph_def)
         tf.initialize_all_variables().run()
         print('Initialized')
         mean_loss = 0
+        t0 = time.time()
         for step in range(num_steps):
             batches = train_batches.next()
             feed_dict = dict()
@@ -306,6 +306,7 @@ def lstm_demo():
                 if step > 0:
                     mean_loss = mean_loss / summary_frequency
                 # The mean loss is an estimate of the loss over the last few batches.
+                print "Avg batch time: %.2f s" % ((time.time() - t0) / summary_frequency)
                 print('Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
                 mean_loss = 0
                 labels = np.concatenate(list(batches)[1:])
@@ -331,6 +332,7 @@ def lstm_demo():
                         predictions = things['sample_prediction'].eval({things['sample_input']: b[0], things['dropout_keep_prob']: 1.0})
                         valid_logprob = valid_logprob + logprob(predictions, b[1])
                     print('Validation set perplexity: %.2f' % float(np.exp(valid_logprob / valid_size)))
+                t0 = time.time()
 
 
 '''
