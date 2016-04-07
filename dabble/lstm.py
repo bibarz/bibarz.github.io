@@ -103,24 +103,26 @@ def logprob(predictions, labels):
     return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
 
 
-def sample_distribution(distribution):
-    """Sample one element from a distribution assumed to be an array of normalized
-    probabilities.
+def sample(prediction, method='sample', n=1):
     """
-    r = random.uniform(0, 1)
-    s = 0
-    for i in range(len(distribution)):
-        s += distribution[i]
-        if s >= r:
-            return i
-    return len(distribution) - 1
-
-
-def sample(prediction, vocabulary_size):
-    """Turn a (column) prediction into 1-hot encoded samples."""
-    p = np.zeros(shape=[1, vocabulary_size], dtype=np.float)
-    p[0, sample_distribution(prediction[0])] = 1.0
-    return p
+    Turn column predictions into n-hot encoded samples.
+    Note than n > 1 results in disaster (the network does
+    not "generalize" from inputs consisting of 1 character
+    to inputs consisting of some distribution of probs over
+    characters)
+    """
+    assert method in ['sample', 'max']
+    p = np.zeros_like(prediction)
+    cum_prob = np.cumsum(prediction, axis=1)
+    for i in range(n):
+        if method == 'max':
+            idx = np.argmax(prediction, axis=1)
+            prediction[np.arange(p.shape[0]), idx] = 0.0
+        elif method == 'sample':
+            values = np.random.random(prediction.shape[0])
+            idx = np.argmax(values[:, None] <= cum_prob, axis=1)
+        p[np.arange(p.shape[0]), idx] = 1.0
+    return p / np.sum(p, axis=1)
 
 
 def random_distribution(vocabulary_size):
@@ -129,31 +131,32 @@ def random_distribution(vocabulary_size):
     return b/np.sum(b, 1)[:,None]
 
 
-def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_size):
+def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_size, dropout_keep_prob):
     # Parameters:
     # Input gate: input, previous output, and bias.
-    stddev = 0.1 / np.sqrt(n_nodes)
-    ix = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
-    im = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
-    ib = tf.Variable(tf.zeros([1, n_nodes]))
+    stddev = 0.01 / np.sqrt(n_nodes)
+    next_stddev = 0.01 / np.sqrt(next_n_nodes)
+    ix = tf.get_variable("ix", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    im = tf.get_variable("im", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    ib = tf.get_variable("ib", [n_nodes], initializer=tf.constant_initializer(0.))
     # Forget gate: input, previous output, and bias.
-    fx = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
-    fm = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
-    fb = tf.Variable(tf.zeros([1, n_nodes]))
+    fx = tf.get_variable("fx", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    fm = tf.get_variable("fm", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    fb = tf.get_variable("fb", [n_nodes], initializer=tf.constant_initializer(0.))
     # Memory cell: input, state and bias.
-    cx = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
-    cm = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
-    cb = tf.Variable(tf.zeros([1, n_nodes]))
+    cx = tf.get_variable("cx", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    cm = tf.get_variable("cm", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    cb = tf.get_variable("cb", [n_nodes], initializer=tf.constant_initializer(0.))
     # Output gate: input, previous output, and bias.
-    ox = tf.Variable(tf.truncated_normal([prev_n_nodes, n_nodes], mean=0., stddev=stddev))
-    om = tf.Variable(tf.truncated_normal([n_nodes, n_nodes], mean=0., stddev=stddev))
-    ob = tf.Variable(tf.zeros([1, n_nodes]))
+    ox = tf.get_variable("ox", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    om = tf.get_variable("om", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    ob = tf.get_variable("ob", [n_nodes], initializer=tf.constant_initializer(0.))
     # Variables saving state across unrollings.
-    saved_output = tf.Variable(tf.zeros([batch_size, n_nodes]), trainable=False)
-    saved_state = tf.Variable(tf.zeros([batch_size, n_nodes]), trainable=False)
+    saved_output = tf.get_variable("saved_output", [batch_size, n_nodes], initializer=tf.constant_initializer(0.), trainable=False)
+    saved_state = tf.get_variable("saved_state", [batch_size, n_nodes], initializer=tf.constant_initializer(0.), trainable=False)
     # Classifier weights and biases.
-    w = tf.Variable(tf.truncated_normal([n_nodes, next_n_nodes], mean=0., stddev=stddev))
-    b = tf.Variable(tf.zeros([next_n_nodes]))
+    w = tf.get_variable("w", [n_nodes, next_n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=next_stddev))
+    b = tf.get_variable("b", [next_n_nodes], initializer=tf.constant_initializer(0.))
 
     def lstm_cell(i, o, state):
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
@@ -172,36 +175,38 @@ def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_
     next_inputs = list()
     output = saved_output
     state = saved_state
-    for i in inputs:
+    for roll_idx, i in enumerate(inputs):
         output, state = lstm_cell(i, output, state)
         outputs.append(output)
         states.append(state)
-        next_inputs.append(tf.nn.xw_plus_b(output, w, b))
+        logits = tf.nn.xw_plus_b(output, w, b, name="logits_%i" % roll_idx)
+        next_inputs.append(tf.nn.dropout(logits, dropout_keep_prob, name="dropout_logits_%i" % roll_idx))
 
-    saved_sample_output = tf.Variable(tf.zeros([1, n_nodes]))
-    saved_sample_state = tf.Variable(tf.zeros([1, n_nodes]))
+    saved_sample_output = tf.get_variable("saved_sample_output", [1, n_nodes], initializer=tf.constant_initializer(0.))
+    saved_sample_state = tf.get_variable("saved_sample_state", [1, n_nodes], initializer=tf.constant_initializer(0.))
     sample_output, sample_state = lstm_cell(
         sample_input, saved_sample_output, saved_sample_state)
-    next_sample_input = tf.nn.xw_plus_b(sample_output, w, b)
+    next_sample_input = tf.nn.xw_plus_b(sample_output, w, b, name="next_sample_input")
     return outputs, states, next_inputs, saved_output, saved_state,\
         sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state
 
 
-def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
+def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
     assert 0 <= unroll_shift < num_unrollings
-    n_nodes = [256, 256]
     n_layers = len(n_nodes)
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
         # Input data.
         things['train_data'] = list()
-        for _ in range(num_unrollings + 1):
+        for j in range(num_unrollings + 1):
             things['train_data'].append(
-              tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size]))
+              tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size], name='train_data_%i' % j))
         train_inputs = things['train_data'][:num_unrollings]
         train_labels = things['train_data'][1:]  # labels are inputs shifted by one time step.
-        things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size])
+        things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sample_input')
+        things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
+
 
         all_n_nodes = [vocabulary_size] + n_nodes + [vocabulary_size]
         assignments = []
@@ -210,9 +215,10 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
         next_inputs = train_inputs
         next_sample_input = things['sample_input']
         for j in range(1, n_layers + 1):
-            outputs, states, next_inputs, saved_output, saved_state,\
-                sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state =\
-                lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j], all_n_nodes[j+1], batch_size)
+            with tf.variable_scope("lstm_%i" % j):
+                outputs, states, next_inputs, saved_output, saved_state,\
+                    sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state =\
+                    lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j], all_n_nodes[j+1], batch_size, things['dropout_keep_prob'])
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
             sample_assignments.append(saved_sample_output.assign(sample_output))
@@ -222,9 +228,8 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
 
         all_logits = tf.concat(0, next_inputs)
         all_labels = tf.concat(0, train_labels)
-        with tf.control_dependencies(assignments):  # make sure we save output and state before computing loss?
-            things['loss'] = tf.reduce_mean(
-              tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
+        with tf.control_dependencies(assignments):  # we have a circular graph and this makes sure it "ends" in the loss?
+            things['loss'] = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
         with tf.control_dependencies(sample_assignments):
             things['sample_prediction'] = tf.nn.softmax(next_sample_input)
         things['reset_sample_state'] = tf.group(*sample_init_assignments)
@@ -232,8 +237,8 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
         # Optimizer.
         global_step = tf.Variable(0)
         things['learning_rate'] = tf.train.exponential_decay(
-            5.0, global_step, 20000, 0.5, staircase=True)
-        optimizer = tf.train.GradientDescentOptimizer(things['learning_rate'])
+            0.005, global_step, 20000, 0.5, staircase=True)
+        optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
         gradients, v = zip(*optimizer.compute_gradients(things['loss']))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
         things['optimizer'] = optimizer.apply_gradients(
@@ -242,7 +247,6 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size):
         # Predictions.
         things['train_prediction'] = tf.nn.softmax(all_logits)
 
-        # Sampling and validation eval: batch 1, no unrolling.
     return things
 
 
@@ -262,7 +266,8 @@ def lstm_demo():
     print valid_size, valid_text[:64].tostring().decode('mac-roman')
     encoder = Encoder(text)
     print('Vocabulary size %d' % encoder.vocabulary_size)
-    batch_size=60
+    n_nodes = [32, 32]
+    batch_size=50
     num_unrollings=50
     unroll_shift = num_unrollings - 1
 
@@ -274,12 +279,15 @@ def lstm_demo():
     print_batches(valid_batches.next(), encoder)
     print_batches(valid_batches.next(), encoder)
 
-    num_steps = 10001
+    num_steps = 100001
     summary_frequency = 100
     things = model(vocabulary_size=encoder.vocabulary_size, num_unrollings=num_unrollings,
-                   batch_size=batch_size, unroll_shift=unroll_shift)
+                   batch_size=batch_size, unroll_shift=unroll_shift, n_nodes=n_nodes)
 
     with tf.Session(graph=things['graph']) as session:
+        summary = tf.scalar_summary("loss", things['loss'])
+        merged = tf.merge_all_summaries()
+        writer = tf.train.SummaryWriter("/tmp/mnist_logs", session.graph_def)
         tf.initialize_all_variables().run()
         print('Initialized')
         mean_loss = 0
@@ -288,10 +296,13 @@ def lstm_demo():
             feed_dict = dict()
             for i in range(num_unrollings + 1):
                 feed_dict[things['train_data'][i]] = batches[i]
-            _, l, predictions, lr = session.run(
-                [things['optimizer'], things['loss'], things['train_prediction'], things['learning_rate']], feed_dict=feed_dict)
+            feed_dict[things['dropout_keep_prob']] = 0.5
+            _, l, predictions, lr, summary_str = session.run(
+                [things['optimizer'], things['loss'], things['train_prediction'],
+                 things['learning_rate'], merged], feed_dict=feed_dict)
             mean_loss += l
             if step % summary_frequency == 0:
+                writer.add_summary(summary_str, step)
                 if step > 0:
                     mean_loss = mean_loss / summary_frequency
                 # The mean loss is an estimate of the loss over the last few batches.
@@ -301,23 +312,23 @@ def lstm_demo():
                 print('Minibatch perplexity: %.2f' % float(np.exp(logprob(predictions, labels))))
                 if step % (summary_frequency * 10) == 0:
                     # Generate some samples.
-                    print('=' * 80)
-                    for _ in range(5):
-                        feed = sample(random_distribution(encoder.vocabulary_size), encoder.vocabulary_size)
-                        sentence = characters(feed, encoder).T[0].tostring()
-                        things['reset_sample_state'].run()
-                        for _ in range(79):
-                            prediction = things['sample_prediction'].eval({things['sample_input']: feed})
-                            feed = sample(prediction, vocabulary_size=encoder.vocabulary_size)
-                            sentence += characters(feed, encoder).T[0].tostring()
-                        print sentence.decode('mac-roman')
-                    print('=' * 80)
+                    for method in ['sample', 'max']:
+                        print('=' * 30 + 'method=' + method + '=' * 30)
+                        for _ in range(5):
+                            feed = sample(random_distribution(encoder.vocabulary_size))
+                            sentence = characters(feed, encoder).T[0].tostring()
+                            things['reset_sample_state'].run()
+                            for _ in range(79):
+                                feed = sample(things['sample_prediction'].eval({things['sample_input']: feed}), method=method)
+                                sentence += characters(feed, encoder).T[0].tostring()
+                            print sentence.decode('mac-roman')
+                        print('=' * 80)
                     # Measure validation set perplexity.
                     things['reset_sample_state'].run()
                     valid_logprob = 0
                     for _ in range(valid_size):
                         b = valid_batches.next()
-                        predictions = things['sample_prediction'].eval({things['sample_input']: b[0]})
+                        predictions = things['sample_prediction'].eval({things['sample_input']: b[0], things['dropout_keep_prob']: 1.0})
                         valid_logprob = valid_logprob + logprob(predictions, b[1])
                     print('Validation set perplexity: %.2f' % float(np.exp(valid_logprob / valid_size)))
 
