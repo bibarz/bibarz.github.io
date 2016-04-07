@@ -206,7 +206,6 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sample_input')
         things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
 
-
         all_n_nodes = [vocabulary_size] + n_nodes + [vocabulary_size]
         assignments = []
         sample_init_assignments = []
@@ -265,7 +264,7 @@ def lstm_demo():
     print valid_size, valid_text[:64].tostring().decode('mac-roman')
     encoder = Encoder(text)
     print('Vocabulary size %d' % encoder.vocabulary_size)
-    n_nodes = [32, 32]
+    n_nodes = [512]
     batch_size=50
     num_unrollings=50
     unroll_shift = num_unrollings - 1
