@@ -2,6 +2,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import zipfile
+import pickle
 from six.moves.urllib.request import urlretrieve
 import time
 
@@ -102,7 +103,7 @@ def logprob(predictions, labels):
     return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
 
 
-def sample(prediction, method='sample', n=1):
+def sample(prediction, temperature, n=1, repeat=True):
     """
     Turn column predictions into n-hot encoded samples.
     Note than n > 1 results in disaster (the network does
@@ -110,17 +111,21 @@ def sample(prediction, method='sample', n=1):
     to inputs consisting of some distribution of probs over
     characters)
     """
-    assert method in ['sample', 'max']
+    assert temperature >= 0
+    temperature = max(temperature, 1e-9)
+    log_prob = np.log(np.maximum(prediction, 1e-9))
+    log_prob /= temperature
+    prediction = np.exp(log_prob)
+    prediction /= np.sum(prediction, axis=1)
     p = np.zeros_like(prediction)
     cum_prob = np.cumsum(prediction, axis=1)
     for i in range(n):
-        if method == 'max':
-            idx = np.argmax(prediction, axis=1)
-            prediction[np.arange(p.shape[0]), idx] = 0.0
-        elif method == 'sample':
-            values = np.random.random(prediction.shape[0])
-            idx = np.argmax(values[:, None] <= cum_prob, axis=1)
+        values = np.random.random(prediction.shape[0])
+        idx = np.argmax(values[:, None] <= cum_prob, axis=1)
         p[np.arange(p.shape[0]), idx] = 1.0
+        if not repeat:
+            prediction[np.arange(p.shape[0]), idx] = 0.0
+            cum_prob = np.cumsum(prediction, axis=1)
     return p / np.sum(p, axis=1)
 
 
@@ -128,6 +133,36 @@ def random_distribution(vocabulary_size):
     """Generate a random column of probabilities."""
     b = np.random.uniform(0.0, 1.0, size=[1, vocabulary_size])
     return b/np.sum(b, 1)[:,None]
+
+
+def generate_text(things, encoder, seed, length, temperature):
+    assert length >= len(seed)
+    things['reset_sample_state'].run()
+    sentence = ''
+    for s in seed:
+        feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
+        feed[0, s] = 1.
+        sentence += characters(feed, encoder).T[0].tostring()
+        feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
+                                                        things['dropout_keep_prob']: 1.0}),
+                      temperature=temperature)
+    for _ in range(length - len(seed)):
+        sentence += characters(feed, encoder).T[0].tostring()
+        feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
+                                                        things['dropout_keep_prob']: 1.0}),
+                      temperature=temperature)
+    return sentence.decode('mac-roman')
+
+
+def load_model(folder, instance_filename):
+    with open(os.path.join(folder, 'model.pickle'), 'r') as f:
+        model_dict = pickle.load(f)
+    things = model(vocabulary_size=model_dict['encoder'].vocabulary_size,
+                   num_unrollings=model_dict['num_unrollings'],
+                   unroll_shift=model_dict['unroll_shift'],
+                   batch_size=model_dict['batch_size'],
+                   n_nodes=model_dict['n_nodes'])
+    return things, model_dict
 
 
 def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_size, dropout_keep_prob):
@@ -236,9 +271,9 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         # Optimizer.
         global_step = tf.Variable(0)
         things['learning_rate'] = tf.train.exponential_decay(
-            5.0, global_step, 20000, 0.5, staircase=True)
+            0.01, global_step, 20000, 0.5, staircase=True)
         #optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
-        optimizer = tf.train.GradientDescentOptimizer(things['learning_rate'])
+        optimizer = tf.train.AdamOptimizer(things['learning_rate'])
         gradients, v = zip(*optimizer.compute_gradients(things['loss']))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
         things['optimizer'] = optimizer.apply_gradients(
@@ -246,6 +281,7 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
 
         # Predictions.
         things['train_prediction'] = tf.nn.softmax(all_logits)
+        things['saver'] = tf.train.Saver()
 
     return things
 
@@ -266,11 +302,11 @@ def lstm_demo():
     print valid_size, valid_text[:64].tostring().decode('mac-roman')
     encoder = Encoder(text)
     print('Vocabulary size %d' % encoder.vocabulary_size)
-    n_nodes = [128]
+    n_nodes = [128 128]
     batch_size = 50
-    num_unrollings = 12
+    num_unrollings = 100
     unroll_shift = num_unrollings - 1
-    dropout_keep_prob = 1.0
+    dropout_keep_prob = 0.8
 
     train_batches = batch_generator(train_text, batch_size, num_unrollings, encoder, unroll_shift)
     valid_batches = batch_generator(valid_text, 1, 1, encoder, 0)
@@ -280,6 +316,13 @@ def lstm_demo():
     print_batches(valid_batches.next(), encoder)
     print_batches(valid_batches.next(), encoder)
 
+    t0_s=time.strftime("%c")
+    folder = '/home/ubuntu/lstm/' + t0_s
+    os.mkdir(folder)
+    model_dict = dict(encoder=encoder, num_unrollings=num_unrollings,
+                      batch_size=batch_size, unroll_shift=unroll_shift, n_nodes=n_nodes)
+    with open(os.path.join(folder, 'model.pickle'), 'w') as f:
+        pickle.dump(model_dict, f)
     num_steps = 100001
     summary_frequency = 100
     things = model(vocabulary_size=encoder.vocabulary_size, num_unrollings=num_unrollings,
@@ -314,18 +357,13 @@ def lstm_demo():
                 labels = np.concatenate(list(batches)[1:])
                 print('Minibatch perplexity: %.2f' % float(np.exp(logprob(predictions, labels))))
                 if step % (summary_frequency * 10) == 0:
+                    things['saver'].save(session, os.path.join(folder, 'instance_%.5i' % step))
                     # Generate some samples.
-                    for method in ['sample', 'max']:
-                        print('=' * 30 + 'method=' + method + '=' * 30)
+                    for temperature in [1, 0.001]:
+                        print('=' * 30 + ('temperature=%.2f' % temperature) + '=' * 30)
                         for _ in range(5):
-                            feed = sample(random_distribution(encoder.vocabulary_size))
-                            sentence = characters(feed, encoder).T[0].tostring()
-                            things['reset_sample_state'].run()
-                            for _ in range(79):
-                                feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
-                                                                                things['dropout_keep_prob']: 1.0}), method=method)
-                                sentence += characters(feed, encoder).T[0].tostring()
-                            print sentence.decode('mac-roman')
+                            print generate_text(things, encoder,
+                                                [np.random.randint(0, encoder.vocabulary_size)], 80, temperature)
                         print('=' * 80)
                     # Measure validation set perplexity.
                     things['reset_sample_state'].run()
@@ -336,6 +374,17 @@ def lstm_demo():
                         valid_logprob = valid_logprob + logprob(predictions, b[1])
                     print('Validation set perplexity: %.2f' % float(np.exp(valid_logprob / valid_size)))
                 t0 = time.time()
+
+
+def load_and_write(folder, instance_filename, start_sentence, temperature):
+    things, model_dict = load_model(folder, instance_filename)
+    with tf.Session(graph=things['graph']) as session:
+        things['saver'].restore(session, os.path.join(folder, instance_filename))
+        seed = model_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
+        print generate_text(things, model_dict['encoder'],
+                            seed, 1000, temperature)
+
+
 
 
 '''
@@ -454,3 +503,5 @@ while True:
 
 if __name__ == "__main__":
     lstm_demo()
+    #load_and_write('/home/ubuntu/lstm/Thu Apr  7 23:10:03 2016', 'instance_11000',
+    #               'Cuando pensamos en la Edad Media, solemos pensar en', 0.5)

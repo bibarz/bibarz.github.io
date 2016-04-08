@@ -171,7 +171,7 @@ def model(data, prev_outputs, image_size, n_channels, n_actions, n_prev_actions)
         return tf.matmul(data, weights) + biases
 
 
-def make_learner(image_size, n_channels, n_actions, n_prev_actions, load_from=None):
+def make_learner(image_size, n_channels, n_actions, n_prev_actions):
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
