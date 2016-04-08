@@ -216,7 +216,8 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
             with tf.variable_scope("lstm_%i" % j):
                 outputs, states, next_inputs, saved_output, saved_state,\
                     sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state =\
-                    lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j], all_n_nodes[j+1], batch_size, things['dropout_keep_prob'])
+                    lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j],
+                               all_n_nodes[j+1], batch_size, things['dropout_keep_prob'])
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
             sample_assignments.append(saved_sample_output.assign(sample_output))
@@ -235,8 +236,9 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         # Optimizer.
         global_step = tf.Variable(0)
         things['learning_rate'] = tf.train.exponential_decay(
-            0.005, global_step, 20000, 0.5, staircase=True)
-        optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
+            5.0, global_step, 20000, 0.5, staircase=True)
+        #optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
+        optimizer = tf.train.GradientDescentOptimizer(things['learning_rate'])
         gradients, v = zip(*optimizer.compute_gradients(things['loss']))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
         things['optimizer'] = optimizer.apply_gradients(
@@ -264,10 +266,11 @@ def lstm_demo():
     print valid_size, valid_text[:64].tostring().decode('mac-roman')
     encoder = Encoder(text)
     print('Vocabulary size %d' % encoder.vocabulary_size)
-    n_nodes = [512]
-    batch_size=50
-    num_unrollings=50
+    n_nodes = [128]
+    batch_size = 50
+    num_unrollings = 12
     unroll_shift = num_unrollings - 1
+    dropout_keep_prob = 1.0
 
     train_batches = batch_generator(train_text, batch_size, num_unrollings, encoder, unroll_shift)
     valid_batches = batch_generator(valid_text, 1, 1, encoder, 0)
@@ -295,7 +298,7 @@ def lstm_demo():
             feed_dict = dict()
             for i in range(num_unrollings + 1):
                 feed_dict[things['train_data'][i]] = batches[i]
-            feed_dict[things['dropout_keep_prob']] = 0.5
+            feed_dict[things['dropout_keep_prob']] = dropout_keep_prob
             _, l, predictions, lr, summary_str = session.run(
                 [things['optimizer'], things['loss'], things['train_prediction'],
                  things['learning_rate'], merged], feed_dict=feed_dict)
@@ -319,7 +322,8 @@ def lstm_demo():
                             sentence = characters(feed, encoder).T[0].tostring()
                             things['reset_sample_state'].run()
                             for _ in range(79):
-                                feed = sample(things['sample_prediction'].eval({things['sample_input']: feed}), method=method)
+                                feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
+                                                                                things['dropout_keep_prob']: 1.0}), method=method)
                                 sentence += characters(feed, encoder).T[0].tostring()
                             print sentence.decode('mac-roman')
                         print('=' * 80)
