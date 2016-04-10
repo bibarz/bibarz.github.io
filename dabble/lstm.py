@@ -167,40 +167,23 @@ def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_
     # Parameters:
     # Input gate: input, previous output, and bias.
     stddev = 0.01 / np.sqrt(n_nodes)
-    next_stddev = 0.01 / np.sqrt(next_n_nodes)
-    ix = tf.get_variable("ix", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    im = tf.get_variable("im", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    ib = tf.get_variable("ib", [n_nodes], initializer=tf.constant_initializer(0.))
-    # Forget gate: input, previous output, and bias.
-    fx = tf.get_variable("fx", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    fm = tf.get_variable("fm", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    fb = tf.get_variable("fb", [n_nodes], initializer=tf.constant_initializer(0.))
-    # Memory cell: input, state and bias.
-    cx = tf.get_variable("cx", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    cm = tf.get_variable("cm", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    cb = tf.get_variable("cb", [n_nodes], initializer=tf.constant_initializer(0.))
-    # Output gate: input, previous output, and bias.
-    ox = tf.get_variable("ox", [prev_n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    om = tf.get_variable("om", [n_nodes, n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
-    ob = tf.get_variable("ob", [n_nodes], initializer=tf.constant_initializer(0.))
+    forget_bias = 0.  # some say 1 helps to not stick to state at the beginning of training
+    # We clump together, input, forget, update and output weights
+    all_x = tf.get_variable("all_x", [prev_n_nodes, 4 * n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    all_m = tf.get_variable("all_m", [n_nodes, 4 * n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=stddev))
+    all_b = tf.get_variable("all_b", [4 * n_nodes], initializer=tf.constant_initializer(0.))
     # Variables saving state across unrollings.
     saved_output = tf.get_variable("saved_output", [batch_size, n_nodes], initializer=tf.constant_initializer(0.), trainable=False)
     saved_state = tf.get_variable("saved_state", [batch_size, n_nodes], initializer=tf.constant_initializer(0.), trainable=False)
-    # Classifier weights and biases.
-    w = tf.get_variable("w", [n_nodes, next_n_nodes], initializer=tf.truncated_normal_initializer(mean=0., stddev=next_stddev))
-    b = tf.get_variable("b", [next_n_nodes], initializer=tf.constant_initializer(0.))
 
     def lstm_cell(i, o, state):
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
         Note that in this formulation, we omit the various connections between the
         previous state and the gates."""
-        all_x = tf.concat(1, [ix, fx, cx, ox], "concat_x")
-        all_m = tf.concat(1, [im, fm, cm, om], "concat_m")
-        all_b = tf.concat(0, [ib, fb, cb, ob], "concat_b")
         all_gates = tf.matmul(i, all_x) + tf.matmul(o, all_m) + all_b
         input, forget, update, output = tf.split(1, 4, all_gates)
         input_gate = tf.sigmoid(input)
-        forget_gate = tf.sigmoid(forget)
+        forget_gate = tf.sigmoid(forget + forget_bias)
         state = forget_gate * state + input_gate * tf.tanh(update)
         output_gate = tf.sigmoid(output)
         return output_gate * tf.tanh(state), state
@@ -208,23 +191,20 @@ def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_
     # Unrolled LSTM loop.
     outputs = list()
     states = list()
-    next_inputs = list()
     output = saved_output
     state = saved_state
     for roll_idx, i in enumerate(inputs):
         output, state = lstm_cell(i, output, state)
+        output = tf.nn.dropout(output, dropout_keep_prob, name="dropout_logits_%i" % roll_idx)
         outputs.append(output)
         states.append(state)
-        logits = tf.nn.xw_plus_b(output, w, b, name="logits_%i" % roll_idx)
-        next_inputs.append(tf.nn.dropout(logits, dropout_keep_prob, name="dropout_logits_%i" % roll_idx))
 
     saved_sample_output = tf.get_variable("saved_sample_output", [1, n_nodes], initializer=tf.constant_initializer(0.))
     saved_sample_state = tf.get_variable("saved_sample_state", [1, n_nodes], initializer=tf.constant_initializer(0.))
     sample_output, sample_state = lstm_cell(
         sample_input, saved_sample_output, saved_sample_state)
-    next_sample_input = tf.nn.xw_plus_b(sample_output, w, b, name="next_sample_input")
-    return outputs, states, next_inputs, saved_output, saved_state,\
-        sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state
+    return outputs, states, saved_output, saved_state,\
+        sample_output, sample_state, saved_sample_output, saved_sample_state
 
 
 def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
@@ -247,13 +227,13 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         assignments = []
         sample_init_assignments = []
         sample_assignments = []
-        next_inputs = train_inputs
-        next_sample_input = things['sample_input']
+        outputs = train_inputs
+        sample_output = things['sample_input']
         for j in range(1, n_layers + 1):
             with tf.variable_scope("lstm_%i" % j):
-                outputs, states, next_inputs, saved_output, saved_state,\
-                    sample_output, sample_state, next_sample_input, saved_sample_output, saved_sample_state =\
-                    lstm_layer(next_inputs, next_sample_input, all_n_nodes[j-1], all_n_nodes[j],
+                outputs, states, saved_output, saved_state,\
+                    sample_output, sample_state, saved_sample_output, saved_sample_state =\
+                    lstm_layer(outputs, sample_output, all_n_nodes[j-1], all_n_nodes[j],
                                all_n_nodes[j+1], batch_size, things['dropout_keep_prob'])
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
@@ -262,12 +242,18 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
             sample_init_assignments.append(saved_sample_output.assign(tf.zeros([1, all_n_nodes[j]])))
             sample_init_assignments.append(saved_sample_state.assign(tf.zeros([1, all_n_nodes[j]])))
 
-        all_logits = tf.concat(0, next_inputs)
+        next_stddev = 0.01 / np.sqrt(all_n_nodes[j + 1])
+        with tf.variable_scope("lstm_%i" % n_layers):
+            # Classifier weights and biases
+            w = tf.get_variable("w", [all_n_nodes[j], all_n_nodes[j + 1]], initializer=tf.truncated_normal_initializer(mean=0., stddev=next_stddev))
+            b = tf.get_variable("b", [all_n_nodes[j + 1]], initializer=tf.constant_initializer(0.))
         all_labels = tf.concat(0, train_labels)
         with tf.control_dependencies(assignments):  # we have a circular graph and this makes sure it "ends" in the loss?
+            all_logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b, name="logits")
             things['loss'] = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
         with tf.control_dependencies(sample_assignments):
-            things['sample_prediction'] = tf.nn.softmax(next_sample_input)
+            sample_logits = tf.nn.xw_plus_b(sample_output, w, b, name="sample_logits")
+            things['sample_prediction'] = tf.nn.softmax(sample_logits)
         things['reset_sample_state'] = tf.group(*sample_init_assignments)
 
         # Optimizer.
@@ -310,9 +296,9 @@ def lstm_demo(data_folder, model_folder=None):
 
     instance_filename = get_latest_instance(model_folder)
     if instance_filename is None:  # nothing to continue from
-        num_unrollings = 10
+        num_unrollings = 50
         model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
-                          batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[64],
+                          batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[256, 256],
                           dropout_keep_prob=0.8)
         with open(os.path.join(model_folder, 'model.pickle'), 'w') as f:
             pickle.dump(model_dict, f)
@@ -544,7 +530,7 @@ def get_latest_instance(folder):
 
 if __name__ == "__main__":
     lstm_demo(data_folder='/media/psf/Home/Downloads/asimo',
-              model_folder='/home/ubuntu/lstm/Sat Apr  9 15:37:37 2016')
+              model_folder='/home/ubuntu/lstm/two_256_256_50')
     base_folder = '/home/ubuntu/lstm/'
     for folder in os.listdir(base_folder):
         full_folder = os.path.join(base_folder, folder)
