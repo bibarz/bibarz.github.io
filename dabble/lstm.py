@@ -71,6 +71,9 @@ class Encoder(object):
 
 
 def batch_generator(text, batch_size, num_unrollings, encoder, unroll_shift):
+    '''
+    generates one-hot encoded batches from the text
+    '''
     segment = len(text) // batch_size
     cursor = np.arange(num_unrollings + 1, dtype=np.int)[:, None] +\
         segment * np.arange(batch_size, dtype=np.int)[None, :]
@@ -163,7 +166,7 @@ def load_model(folder):
     return things, model_dict
 
 
-def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, next_n_nodes, batch_size, dropout_keep_prob):
+def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, batch_size, dropout_keep_prob):
     # Parameters:
     # Input gate: input, previous output, and bias.
     stddev = 0.01 / np.sqrt(n_nodes)
@@ -234,7 +237,7 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
                 outputs, states, saved_output, saved_state,\
                     sample_output, sample_state, saved_sample_output, saved_sample_state =\
                     lstm_layer(outputs, sample_output, all_n_nodes[j-1], all_n_nodes[j],
-                               all_n_nodes[j+1], batch_size, things['dropout_keep_prob'])
+                               batch_size, things['dropout_keep_prob'])
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
             sample_assignments.append(saved_sample_output.assign(sample_output))
@@ -259,11 +262,12 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         # Optimizer.
         global_step = tf.Variable(0)
         things['learning_rate'] = tf.train.exponential_decay(
-            0.01, global_step, 20000, 0.5, staircase=True)
-        #optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
-        optimizer = tf.train.AdamOptimizer(things['learning_rate'])
-        gradients, v = zip(*optimizer.compute_gradients(things['loss']))
-        gradients, _ = tf.clip_by_global_norm(gradients, 10.25)
+            0.01, global_step, 6000, 0.5, staircase=True)
+        optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
+#        optimizer = tf.train.AdamOptimizer(things['learning_rate'])
+        gradients, v = zip(*optimizer.compute_gradients(things['loss'],
+                                                        aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE))
+        gradients, _ = tf.clip_by_global_norm(gradients, 5.)
         things['optimizer'] = optimizer.apply_gradients(
             zip(gradients, v), global_step=global_step)
 
@@ -274,17 +278,15 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
     return things
 
 
-def lstm_demo(data_folder, model_folder=None):
+def lstm_demo(text, model_folder=None, model_dict=None):
 #    url = 'http://mattmahoney.net/dc/'
 #    filename = maybe_download(url, 'text8.zip', 31344016)
 #    text = np.fromstring(read_data(filename), dtype=np.uint8)
-    text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
-    text[text==ord('\r')] = ord('\n')
-    print('Data size %d' % len(text))
     valid_size = 5000
     valid_text = text[:valid_size]
     train_text = text[valid_size:]
     train_size = len(train_text)
+    print('Data size %d' % len(text))
     print train_size, train_text[:64].tostring().decode('mac-roman')
     print valid_size, valid_text[:64].tostring().decode('mac-roman')
 
@@ -296,19 +298,13 @@ def lstm_demo(data_folder, model_folder=None):
 
     instance_filename = get_latest_instance(model_folder)
     if instance_filename is None:  # nothing to continue from
-        num_unrollings = 50
-        model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
-                          batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[256, 256],
-                          dropout_keep_prob=0.8)
+        assert model_dict is not None, "Must provide model_dict for new training"
         with open(os.path.join(model_folder, 'model.pickle'), 'w') as f:
             pickle.dump(model_dict, f)
         start_iter = 0
     else:
+        assert model_dict is None, ("Loading model from folder %s, cannot use given model_dict" % model_folder)
         things, model_dict = load_model(model_folder)
-        if 'dropout_keep_prob' not in model_dict:
-            model_dict['dropout_keep_prob'] = 0.8
-        with open(os.path.join(model_folder, 'model.pickle'), 'w') as f:
-            pickle.dump(model_dict, f)  # resave to add dropout just to clean up
         start_iter = int(instance_filename[-5:]) + 1
 
     encoder = model_dict['encoder']
@@ -529,8 +525,19 @@ def get_latest_instance(folder):
 
 
 if __name__ == "__main__":
-    lstm_demo(data_folder='/media/psf/Home/Downloads/asimo',
-              model_folder='/home/ubuntu/lstm/two_256_256_50')
+
+    data_folder='/media/psf/Home/Downloads/asimo'
+    text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
+    text[text==ord('\r')] = ord('\n')
+    num_unrollings = 60
+    model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
+                      batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512],
+                      dropout_keep_prob=1.0)
+    lstm_demo(text=text,
+              model_folder='/home/ubuntu/lstm/512_512_unroll60_drop10_rmsprop',
+              model_dict=None)
+
+
     base_folder = '/home/ubuntu/lstm/'
     for folder in os.listdir(base_folder):
         full_folder = os.path.join(base_folder, folder)
@@ -542,5 +549,5 @@ if __name__ == "__main__":
         print folder, " ", instance
         print "=" * 80
         load_and_write(full_folder, instance,
-                       'En el siglo VII a. C., las ciudades griegas estaban superpobladas. La comida escaseaba y los precios eran',
-                       0.5)
+                       'Casi toda la cristiandad occidental estaba sometida a los reyes francos, y los francos no',
+                       0.75)
