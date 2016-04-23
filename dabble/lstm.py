@@ -109,7 +109,7 @@ def logprob(predictions, labels):
 
 def sample(prediction, temperature, n=1, repeat=True):
     """
-    Turn column predictions into n-hot encoded samples.
+    Turn row predictions into n-hot encoded samples.
     Note than n > 1 results in disaster (the network does
     not "generalize" from inputs consisting of 1 character
     to inputs consisting of some distribution of probs over
@@ -129,6 +129,7 @@ def sample(prediction, temperature, n=1, repeat=True):
         p[np.arange(p.shape[0]), idx] = 1.0
         if not repeat:
             prediction[np.arange(p.shape[0]), idx] = 0.0
+            prediction /= np.sum(prediction, axis=1)
             cum_prob = np.cumsum(prediction, axis=1)
     return p / np.sum(p, axis=1)
 
@@ -139,20 +140,73 @@ def random_distribution(vocabulary_size):
     return b/np.sum(b, 1)[:,None]
 
 
-def text_generator(things, encoder, seed, temperature):
-    things['reset_sample_state'].run()
+class Brancher(object):
+    def __init__(self, predictions, state, branching, temperature):
+        self.temperature = temperature
+        self.branching = branching
+        self.predictions = predictions
+        self.state = state
+        self.chosen = np.where(sample(predictions, temperature=temperature, n=branching, repeat=False))[1]
+        self.branches = []
+
+    def add_branch(self, predictions, state):
+        assert len(self.branches) < self.branching
+        self.branches.append(Brancher(predictions, state, self.branching, self.temperature))
+
+    def depth(self):
+        if len(self.branches) == 0:
+            return 0
+        else:
+            return max([1 + b.depth() for b in self.branches])
+
+    def all_leaves(self, p):
+        '''
+        :param p: probability accrued so far on the way through this branch
+        Each leave is a 3 tuple:
+            - first element, a tuple with the order in each branch along the path to the leave
+            - second element, the total probability of the leave (product of the probs on the path to it)
+            - third element, the brancher itself that constitutes the leaf
+        '''
+        if len(self.branches) == 0:
+            return [((i, ), p * self.predictions[0, c], self) for i, c in enumerate(self.chosen)]
+        else:
+            leaves = []
+            for i, b in enumerate(self.branches):
+                leaves += [((i, ) + l[0], l[1], l[2]) for l in b.all_leaves(p * self.predictions[0, self.chosen[i]])]
+            return leaves
+
+
+def text_generator(session, things, encoder, seed, temperature, depth=1, branching=1):
+    eval_feed_dict = {v: np.zeros(v._shape) for v in [things['sampler_combined_start']]}
+    eval_feed_dict[things['dropout_keep_prob']] = 1.0
+    run_list = [things['sampler_combined_end'], things['sampler_prediction']]
     for s in seed:
         feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
         feed[0, s] = 1.
         yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
-        feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
-                                                        things['dropout_keep_prob']: 1.0}),
-                      temperature=temperature)
+        eval_feed_dict[things['sampler_input']] = feed
+        eval_feed_dict[things['sampler_combined_start']], predictions = session.run(run_list, feed_dict=eval_feed_dict)
+
+    cascade = Brancher(predictions, eval_feed_dict[things['sampler_combined_start']], branching, temperature)
     while True:
-        yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
-        feed = sample(things['sample_prediction'].eval({things['sample_input']: feed,
-                                                        things['dropout_keep_prob']: 1.0}),
-                      temperature=temperature)
+        if cascade.depth() >= depth:
+            choices = cascade.all_leaves(1.)
+            all_p = np.array([c[1] for c in choices])[None, :]
+            all_p /= np.sum(all_p, axis=1)
+            selected_leave = np.where(sample(all_p, temperature, n=1, repeat=True))[0]
+            selected_branch = choices[selected_leave][0][0]
+            feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
+            feed[0, cascade.chosen[selected_branch]] = 1.
+            yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
+            cascade = cascade.branches[selected_branch]
+        remaining_branches = [(c[2], c[0][-1]) for c in cascade.all_leaves(1.)]
+        for b, i in remaining_branches:
+            eval_feed_dict[things['sampler_combined_start']] = b.state
+            feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
+            feed[0, b.chosen[i]] = 1.
+            eval_feed_dict[things['sampler_input']] = feed
+            new_state, predictions = session.run(run_list, feed_dict=eval_feed_dict)
+            b.add_branch(predictions=predictions, state=new_state)
 
 
 def load_model(folder):
@@ -166,7 +220,7 @@ def load_model(folder):
     return things, model_dict
 
 
-def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, batch_size, dropout_keep_prob):
+def lstm_layer(inputs, sampler_input, sampler_output, sampler_state, prev_n_nodes, n_nodes, batch_size, dropout_keep_prob):
     # Parameters:
     # Input gate: input, previous output, and bias.
     stddev = 0.01 / np.sqrt(n_nodes)
@@ -202,12 +256,9 @@ def lstm_layer(inputs, sample_input, prev_n_nodes, n_nodes, batch_size, dropout_
         outputs.append(output)
         states.append(state)
 
-    saved_sample_output = tf.get_variable("saved_sample_output", [1, n_nodes], initializer=tf.constant_initializer(0.))
-    saved_sample_state = tf.get_variable("saved_sample_state", [1, n_nodes], initializer=tf.constant_initializer(0.))
-    sample_output, sample_state = lstm_cell(
-        sample_input, saved_sample_output, saved_sample_state)
-    return outputs, states, saved_output, saved_state,\
-        sample_output, sample_state, saved_sample_output, saved_sample_state
+    sampler_output, sampler_state = lstm_cell(
+        sampler_input, sampler_output, sampler_state)
+    return outputs, states, saved_output, saved_state, sampler_output, sampler_state
 
 
 def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
@@ -223,28 +274,31 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
               tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size], name='train_data_%i' % j))
         train_inputs = things['train_data'][:num_unrollings]
         train_labels = things['train_data'][1:]  # labels are inputs shifted by one time step.
-        things['sample_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sample_input')
+        things['sampler_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sampler_input')
         things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
 
         all_n_nodes = [vocabulary_size] + n_nodes + [vocabulary_size]
         assignments = []
-        sample_init_assignments = []
-        sample_assignments = []
         outputs = train_inputs
-        sample_output = things['sample_input']
+        sampler_input = things['sampler_input']
+        sampler_combined_lengths = np.kron(n_nodes, [1, 1])  # output, state, output, state... for each sampler layer
+        sampler_slices = np.hstack(([0], np.cumsum(sampler_combined_lengths)))
+        things['sampler_combined_start'] = tf.zeros(shape=[1, sampler_slices[-1]], dtype=tf.float32)
+        sampler_combined_list = []
         for j in range(1, n_layers + 1):
             with tf.variable_scope("lstm_%i" % j):
-                outputs, states, saved_output, saved_state,\
-                    sample_output, sample_state, saved_sample_output, saved_sample_state =\
-                    lstm_layer(outputs, sample_output, all_n_nodes[j-1], all_n_nodes[j],
+                sampler_output = tf.slice(things['sampler_combined_start'], [0, sampler_slices[2 * (j - 1)]], [1, sampler_combined_lengths[2 * (j - 1)]])
+                sampler_state = tf.slice(things['sampler_combined_start'], [0, sampler_slices[2 * (j - 1) + 1]], [1, sampler_combined_lengths[2 * (j - 1) + 1]])
+                outputs, states, saved_output, saved_state, sampler_output, sampler_state =\
+                    lstm_layer(outputs, sampler_input, sampler_output, sampler_state,
+                               all_n_nodes[j-1], all_n_nodes[j],
                                batch_size, things['dropout_keep_prob'])
+                sampler_input = sampler_output
+                sampler_combined_list += [sampler_output, sampler_state]
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
-            sample_assignments.append(saved_sample_output.assign(sample_output))
-            sample_assignments.append(saved_sample_state.assign(sample_state))
-            sample_init_assignments.append(saved_sample_output.assign(tf.zeros([1, all_n_nodes[j]])))
-            sample_init_assignments.append(saved_sample_state.assign(tf.zeros([1, all_n_nodes[j]])))
 
+        things['sampler_combined_end'] = tf.concat(1, sampler_combined_list)
         next_stddev = 0.01 / np.sqrt(all_n_nodes[j + 1])
         with tf.variable_scope("lstm_%i" % n_layers):
             # Classifier weights and biases
@@ -254,10 +308,8 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         with tf.control_dependencies(assignments):  # we have a circular graph and this makes sure it "ends" in the loss?
             all_logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b, name="logits")
             things['loss'] = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
-        with tf.control_dependencies(sample_assignments):
-            sample_logits = tf.nn.xw_plus_b(sample_output, w, b, name="sample_logits")
-            things['sample_prediction'] = tf.nn.softmax(sample_logits)
-        things['reset_sample_state'] = tf.group(*sample_init_assignments)
+        sampler_logits = tf.nn.xw_plus_b(sampler_output, w, b, name="sampler_logits")
+        things['sampler_prediction'] = tf.nn.softmax(sampler_logits)
 
         # Optimizer.
         global_step = tf.Variable(0)
@@ -267,7 +319,7 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
 #        optimizer = tf.train.AdamOptimizer(things['learning_rate'])
         gradients, v = zip(*optimizer.compute_gradients(things['loss'],
                                                         aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE))
-        gradients, _ = tf.clip_by_global_norm(gradients, 5.)
+        gradients, _ = tf.clip_by_global_norm(gradients, 1.)
         things['optimizer'] = optimizer.apply_gradients(
             zip(gradients, v), global_step=global_step)
 
@@ -366,7 +418,7 @@ def lstm_demo(text, model_folder=None, model_dict=None):
                     # Generate some samples.
                     for temperature in [1, 0.001]:
                         print('=' * 30 + ('temperature=%.2f' % temperature) + '=' * 30)
-                        generator = text_generator(things, encoder,
+                        generator = text_generator(session, things, encoder,
                                                    [np.random.randint(0, encoder.vocabulary_size)], temperature)
                         for _ in range(5):
                             sentence = ''
@@ -375,11 +427,14 @@ def lstm_demo(text, model_folder=None, model_dict=None):
                             print sentence
                         print('=' * 80)
                     # Measure validation set perplexity.
-                    things['reset_sample_state'].run()
+                    eval_feed_dict = {v: np.zeros(v._shape) for v in [things['sampler_combined_start']]}
+                    eval_feed_dict[things['dropout_keep_prob']] = 1.0
+                    run_list = [things['sampler_combined_end'], things['sampler_prediction']]
                     valid_logprob = 0
                     for _ in range(valid_size):
                         b = valid_batches.next()
-                        predictions = things['sample_prediction'].eval({things['sample_input']: b[0], things['dropout_keep_prob']: 1.0})
+                        eval_feed_dict[things['sampler_input']] = b[0]
+                        eval_feed_dict[things['sampler_combined_start']], predictions = session.run(run_list, feed_dict = eval_feed_dict)
                         valid_logprob = valid_logprob + logprob(predictions, b[1])
                     print('Validation set perplexity: %.2f' % float(np.exp(valid_logprob / valid_size)))
                 t0 = time.time()
@@ -391,7 +446,7 @@ def load_and_write(folder, instance_filename, start_sentence, temperature):
     with tf.Session(graph=things['graph']) as session:
         things['saver'].restore(session, os.path.join(folder, instance_filename))
         seed = model_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
-        writer = text_generator(things, model_dict['encoder'], seed, temperature)
+        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=3, branching=3)
         for l in range(10):
             sentence = ''
             for _ in range(80):
@@ -531,11 +586,11 @@ if __name__ == "__main__":
     text[text==ord('\r')] = ord('\n')
     num_unrollings = 60
     model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
-                      batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512],
+                      batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512, 512],
                       dropout_keep_prob=1.0)
     lstm_demo(text=text,
-              model_folder='/home/ubuntu/lstm/512_512_unroll60_drop10_rmsprop',
-              model_dict=None)
+              model_folder='/home/ubuntu/lstm/512_512_512_unroll60_drop10_rmsprop',
+              model_dict=model_dict)
 
 
     base_folder = '/home/ubuntu/lstm/'
@@ -550,4 +605,4 @@ if __name__ == "__main__":
         print "=" * 80
         load_and_write(full_folder, instance,
                        'Casi toda la cristiandad occidental estaba sometida a los reyes francos, y los francos no',
-                       0.75)
+                       1.25)
