@@ -8,6 +8,8 @@ import zipfile
 from matplotlib import pylab
 from six.moves.urllib.request import urlretrieve
 from sklearn.manifold import TSNE
+import re
+from lstm import Encoder, compile_data
 
 
 def maybe_download(url, filename, expected_bytes):
@@ -31,6 +33,14 @@ def read_data(filename):
     data = tf.compat.as_str(f.read(name)).split()
     f.close()
     return data
+
+
+def make_words_with_separators(text, encoding='mac-roman'):
+    separators = u'"!#$%&' + u"'" + u'()*+,-./:;<=>?@[\\]^_`{|}~' \
+                 u'\x09\x0a\x1e\u00ab\u00bb'
+    exp = r"[\w]+|[" + separators + "]"
+    words = re.findall(exp, text.decode(encoding), flags=re.UNICODE)
+    return [w.encode(encoding) for w in words]
 
 
 def build_dataset(words, vocabulary_size):
@@ -99,8 +109,8 @@ def plot_embeddings(embeddings, labels):
 def model(vocabulary_size, format='word2vec'):
     assert format in ['word2vec', 'cbow']
     embedding_size = 128 # Dimension of the embedding vector.
-    num_sampled = 64 # Number of negative examples to sample.
-    gradient_speed = {'word2vec': 1., 'cbow': 0.1}[format]
+    num_sampled = 256 # Number of negative examples to sample.
+    gradient_speed = {'word2vec': 0.5, 'cbow': 0.1}[format]
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
@@ -139,20 +149,22 @@ def model(vocabulary_size, format='word2vec'):
 
 def demo(format):
     assert format in ['word2vec', 'cbow']
-    url = 'http://mattmahoney.net/dc/'
-    filename = maybe_download(url, 'text8.zip', 31344016)
     vocabulary_size = 50000
-    words = read_data(filename)
+    data_folder='/media/psf/Home/Downloads/asimfun'
+    encoding = 'mac-roman'
+    text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
+    text[text==ord('\r')] = ord('\n')
+    words = make_words_with_separators(text.tostring(), encoding=encoding)
     print('Data size %d' % len(words))
     data, count, dictionary, reverse_dictionary = build_dataset(words, vocabulary_size)
     print('Most common words (+UNK)', count[:5])
     print('Sample data', data[:10])
     del words  # Hint to reduce memory.filename = maybe_download('text8.zip', 31344016)
-    print('data:', [reverse_dictionary[di] for di in data[:8]])
+    print('data:', [reverse_dictionary[di].decode(encoding) for di in data[:8]])
 
-    batch_size = 128
-    skip_window = 1 # How many words to consider left and right.
-    num_skips = 2 # How many times to reuse an input to generate a label (only word2vec)
+    batch_size = 256
+    skip_window = 2 # How many words to consider left and right.
+    num_skips = 4 # How many times to reuse an input to generate a label (only word2vec)
     # We pick a random validation set to sample nearest neighbors. here we limit the
     # validation samples to the words that have a low numeric ID, which by
     # construction are also the most frequent.
@@ -161,7 +173,7 @@ def demo(format):
     valid_examples = np.array(random.sample(range(valid_window), valid_size))
     things = model(vocabulary_size, format=format)
 
-    num_steps = {'word2vec': 100001, 'cbow': 1000001}[format]
+    num_steps = {'word2vec': 200001, 'cbow': 1000001}[format]
     batch_generator = {'word2vec': word2vec_batch_generator(data, batch_size, num_skips, skip_window),
                        'cbow': cbow_batch_generator(data, batch_size, skip_window)}[format]
     with tf.Session(graph=things['graph']) as session:
@@ -184,22 +196,22 @@ def demo(format):
                 feed_dict = {things['input'] : valid_examples}
                 sim = session.run(things['similarity'], feed_dict=feed_dict)
                 for i in xrange(valid_size):
-                    valid_word = reverse_dictionary[valid_examples[i]]
+                    valid_word = reverse_dictionary[valid_examples[i]].decode(encoding)
                     top_k = 8 # number of nearest neighbors
                     nearest = (-sim[i, :]).argsort()[1:top_k+1]
                     log = 'Nearest to %s:' % valid_word
                     for k in xrange(top_k):
-                        close_word = reverse_dictionary[nearest[k]]
+                        close_word = reverse_dictionary[nearest[k]].decode(encoding)
                         log = '%s %s,' % (log, close_word)
                     print(log)
         final_embeddings = things['normalized_embeddings'].eval()
 
-    num_points = 400
+    num_points = 1000
     tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
     two_d_embeddings = tsne.fit_transform(final_embeddings[1:num_points+1, :])
-    words = [reverse_dictionary[i] for i in range(1, num_points+1)]
+    words = [reverse_dictionary[i].decode(encoding) for i in range(1, num_points+1)]
     plot_embeddings(two_d_embeddings, words)
 
 
 if __name__ == "__main__":
-    demo('cbow')
+    demo('word2vec')

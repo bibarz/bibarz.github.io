@@ -6,6 +6,8 @@ import pickle
 import stat
 from six.moves.urllib.request import urlretrieve
 import time
+import cv2
+import sys
 
 
 def maybe_download(url, filename, expected_bytes):
@@ -68,6 +70,10 @@ class Encoder(object):
 
     def id2char(self, ids):
         return self._decoder[ids]
+
+    def print_chars(self):
+        for i, c in enumerate(self._decoder):
+            print i, " --- ", c, " --- ", c.tostring().decode('mac-roman')
 
 
 def batch_generator(text, batch_size, num_unrollings, encoder, unroll_shift):
@@ -140,43 +146,23 @@ def random_distribution(vocabulary_size):
     return b/np.sum(b, 1)[:,None]
 
 
-class Brancher(object):
-    def __init__(self, predictions, state, branching, temperature):
-        self.temperature = temperature
-        self.branching = branching
-        self.predictions = predictions
-        self.state = state
-        self.chosen = np.where(sample(predictions, temperature=temperature, n=branching, repeat=False))[1]
-        self.branches = []
-
-    def add_branch(self, predictions, state):
-        assert len(self.branches) < self.branching
-        self.branches.append(Brancher(predictions, state, self.branching, self.temperature))
-
-    def depth(self):
-        if len(self.branches) == 0:
-            return 0
-        else:
-            return max([1 + b.depth() for b in self.branches])
-
-    def all_leaves(self, p):
-        '''
-        :param p: probability accrued so far on the way through this branch
-        Each leave is a 3 tuple:
-            - first element, a tuple with the order in each branch along the path to the leave
-            - second element, the total probability of the leave (product of the probs on the path to it)
-            - third element, the brancher itself that constitutes the leaf
-        '''
-        if len(self.branches) == 0:
-            return [((i, ), p * self.predictions[0, c], self) for i, c in enumerate(self.chosen)]
-        else:
-            leaves = []
-            for i, b in enumerate(self.branches):
-                leaves += [((i, ) + l[0], l[1], l[2]) for l in b.all_leaves(p * self.predictions[0, self.chosen[i]])]
-            return leaves
+def display_samples(samples, encoder):
+    n_to_show = 20
+    im = np.zeros(((n_to_show + 1) * 20, 500, 3), dtype=np.uint8)
+    logprobs = [np.sum(s[1]) for s in samples]
+    order = np.argsort(logprobs)[::-1]
+    for i, idx in enumerate(order[:n_to_show]):
+        s = samples[idx]
+        txt = ("%.2f " % (logprobs[idx])) + encoder.id2char(np.array(s[0], dtype=np.int)).tostring()
+        size = cv2.getTextSize(txt, cv2.FONT_HERSHEY_PLAIN, 1.0, 1)[0]
+        cv2.putText(im, txt, (20, 20 * (i + 1)), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 255, 255))
+        next_chars = encoder.id2char(np.argsort(s[2][0])[::-1][:3]).tostring()  # the three most likely next characters
+        cv2.putText(im, next_chars, (20 + size[0], 20 * (i + 1)), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 0))
+    cv2.imshow("Samples", im)
+    cv2.waitKey(1)
 
 
-def text_generator(session, things, encoder, seed, temperature, depth=1, branching=1):
+def text_generator(session, things, encoder, seed, temperature, depth=1, n_samples=1):
     eval_feed_dict = {v: np.zeros(v._shape) for v in [things['sampler_combined_start']]}
     eval_feed_dict[things['dropout_keep_prob']] = 1.0
     run_list = [things['sampler_combined_end'], things['sampler_prediction']]
@@ -187,26 +173,53 @@ def text_generator(session, things, encoder, seed, temperature, depth=1, branchi
         eval_feed_dict[things['sampler_input']] = feed
         eval_feed_dict[things['sampler_combined_start']], predictions = session.run(run_list, feed_dict=eval_feed_dict)
 
-    cascade = Brancher(predictions, eval_feed_dict[things['sampler_combined_start']], branching, temperature)
+    samples = [((), (0., ), predictions, eval_feed_dict[things['sampler_combined_start']])]
+    current_depth = 0
     while True:
-        if cascade.depth() >= depth:
-            choices = cascade.all_leaves(1.)
-            all_p = np.array([c[1] for c in choices])[None, :]
-            all_p /= np.sum(all_p, axis=1)
-            selected_leave = np.where(sample(all_p, temperature, n=1, repeat=True))[0]
-            selected_branch = choices[selected_leave][0][0]
+        all_p = np.hstack([np.sum(c[1]) + c[2] for c in samples])
+        all_p = np.exp(all_p)
+        all_p /= np.sum(all_p, axis=1)
+        first_selected = np.where(sample(all_p, temperature))[1]
+        if (current_depth >= depth):  # produce the best character
             feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
-            feed[0, cascade.chosen[selected_branch]] = 1.
+            first_selected_sample = first_selected / encoder.vocabulary_size
+            c = samples[first_selected_sample][0][0]
+            feed[0, c] = 1.  # the first character of the character list (index 0) of the first chosen sample
             yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
-            cascade = cascade.branches[selected_branch]
-        remaining_branches = [(c[2], c[0][-1]) for c in cascade.all_leaves(1.)]
-        for b, i in remaining_branches:
-            eval_feed_dict[things['sampler_combined_start']] = b.state
+            samples = [s for s in samples if s[0][0] == c]  # we have to eliminate all samples that don't start with the chosen one
+            all_p = np.hstack([np.sum(c[1]) + c[2] for c in samples])
+            all_p = np.exp(all_p)
+            all_p /= np.sum(all_p, axis=1)
+            selected = []
+            n_draw = n_samples
+        else:
+            selected = [first_selected]
+            all_p[0, first_selected] = 0
+            n_draw = n_samples - 1
+        for i in range(min(n_draw, all_p.shape[1])):
+            selected.append(np.where(sample(all_p, temperature))[1])
+            all_p[0, selected[-1]] = 0  # do not repeat choice
+        selected = np.array(selected)
+        selected_samples = selected / encoder.vocabulary_size
+        selected_characters = selected % encoder.vocabulary_size
+        new_samples = []
+        for s, c in zip(selected_samples, selected_characters):
+            current_sample = samples[s]
+            eval_feed_dict[things['sampler_combined_start']] = current_sample[3]
             feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
-            feed[0, b.chosen[i]] = 1.
+            feed[0, c] = 1.
             eval_feed_dict[things['sampler_input']] = feed
             new_state, predictions = session.run(run_list, feed_dict=eval_feed_dict)
-            b.add_branch(predictions=predictions, state=new_state)
+            if current_depth >= depth:
+                ns = (current_sample[0][1:] + (c,), current_sample[1][1:] + (np.log(current_sample[2][0, c]), ),
+                      predictions, new_state)
+            else:
+                ns = (current_sample[0] + (c,), current_sample[1] + (np.log(current_sample[2][0, c]), ),
+                      predictions, new_state)
+            new_samples.append(ns)
+        samples = new_samples
+        display_samples(samples, encoder)
+        current_depth += 1
 
 
 def load_model(folder):
@@ -446,12 +459,11 @@ def load_and_write(folder, instance_filename, start_sentence, temperature):
     with tf.Session(graph=things['graph']) as session:
         things['saver'].restore(session, os.path.join(folder, instance_filename))
         seed = model_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
-        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=3, branching=3)
-        for l in range(10):
-            sentence = ''
+        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=20, n_samples=1000)
+        for l in range(100):
             for _ in range(80):
-                sentence += writer.next()
-            print sentence
+                sys.stdout.write(writer.next())
+            print
 
 
 
@@ -581,22 +593,24 @@ def get_latest_instance(folder):
 
 if __name__ == "__main__":
 
-    data_folder='/media/psf/Home/Downloads/asimo'
-    text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
-    text[text==ord('\r')] = ord('\n')
-    num_unrollings = 60
-    model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
-                      batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512, 512],
-                      dropout_keep_prob=1.0)
-    lstm_demo(text=text,
-              model_folder='/home/ubuntu/lstm/512_512_512_unroll60_drop10_rmsprop',
-              model_dict=model_dict)
-
-
+    # data_folder='/media/psf/Home/Downloads/asimo'
+    # text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
+    # text[text==ord('\r')] = ord('\n')
+    # num_unrollings = 60
+    # model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
+    #                   batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512, 512],
+    #                   dropout_keep_prob=1.0)
+    # lstm_demo(text=text,
+    #           model_folder='/home/ubuntu/lstm/512_512_512_unroll60_drop10_rmsprop',
+    #           model_dict=model_dict)
+    #
+    #
     base_folder = '/home/ubuntu/lstm/'
     for folder in os.listdir(base_folder):
         full_folder = os.path.join(base_folder, folder)
         instance = get_latest_instance(full_folder)
+        if not folder.startswith('512_512_512'):
+            continue
         if instance is None:
             print "No valid instance in folder %s" % full_folder
             continue
@@ -605,4 +619,4 @@ if __name__ == "__main__":
         print "=" * 80
         load_and_write(full_folder, instance,
                        'Casi toda la cristiandad occidental estaba sometida a los reyes francos, y los francos no',
-                       1.25)
+                       1.5)
