@@ -459,7 +459,7 @@ def load_and_write(folder, instance_filename, start_sentence, temperature):
     with tf.Session(graph=things['graph']) as session:
         things['saver'].restore(session, os.path.join(folder, instance_filename))
         seed = model_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
-        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=20, n_samples=1000)
+        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=50, n_samples=100)
         for l in range(100):
             for _ in range(80):
                 sys.stdout.write(writer.next())
@@ -609,7 +609,7 @@ if __name__ == "__main__":
     for folder in os.listdir(base_folder):
         full_folder = os.path.join(base_folder, folder)
         instance = get_latest_instance(full_folder)
-        if not folder.startswith('512_512_512'):
+        if not folder.startswith('512_512_512') or not folder.endswith('bigdata'):
             continue
         if instance is None:
             print "No valid instance in folder %s" % full_folder
@@ -619,4 +619,4 @@ if __name__ == "__main__":
         print "=" * 80
         load_and_write(full_folder, instance,
                        'Casi toda la cristiandad occidental estaba sometida a los reyes francos, y los francos no',
-                       1.5)
+                       0.5)
