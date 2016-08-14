@@ -12,7 +12,7 @@ class Atan(object):
     def fwd(cls, x):
         return np.arctan(x)
     @classmethod
-    def bwd(cls, x):
+    def derivative(cls, x):
         return 1./ (1 + x ** 2.)
 
 
@@ -21,7 +21,7 @@ class Tanh(object):
     def fwd(cls, x):
         return np.tanh(x)
     @classmethod
-    def bwd(cls, x):
+    def derivative(cls, x):
         return 1 - np.tanh(x) ** 2
 
 
@@ -30,7 +30,7 @@ class Relu(object):
     def fwd(cls, x):
         return x * (x > 0)
     @classmethod
-    def bwd(cls, x):
+    def derivative(cls, x):
         return (x > 0).astype(np.float)
 
 
@@ -67,10 +67,10 @@ class NN(object):
         self._last_gb = []
         self._last_gw = []
         for k in range(len(self._w))[::-1]:
-            e *= self._types[k].bwd(i[k])
-            self._last_gb = [np.mean(e, axis=0)] + self._last_gb
-            self._last_gw = [np.mean(o[k][..., None] * e[:, None, :], axis=0)] + self._last_gw
-            e = np.dot(e, self._w[k].T)
+            e *= self._types[k].derivative(i[k])  # backprop the error across the neurons
+            self._last_gb = [np.mean(e, axis=0)] + self._last_gb  # prepending, not adding
+            self._last_gw = [np.mean(o[k][..., None] * e[:, None, :], axis=0)] + self._last_gw  # prepending, not adding
+            e = np.dot(e, self._w[k].T)  # backprop the error across the bridge
         for k, (db, dw) in enumerate(zip(self._last_gb, self._last_gw)):
             self._db[k] = self._momentum * self._db[k] + (1 - self._momentum) * db
             self._dw[k] = self._momentum * self._dw[k] + (1 - self._momentum) * dw
@@ -84,6 +84,15 @@ class NN(object):
             i = np.dot(o, self._w[k]) + self._b[k]
             o = self._types[k].fwd(i)
         return o
+
+    def copy(self):
+        c = NN([s for s in self._sizes], [t for t in self._types],
+               self._init_w_scale, self._init_b_scale, self._eta, self._momentum)
+        c._w = [w.copy() for w in self._w]
+        c._b = [b.copy() for b in self._b]
+        c._dw = [dw.copy() for dw in self._dw]
+        c._db = [db.copy() for db in self._db]
+        return c
 
 
 def test_gradients():
@@ -122,7 +131,7 @@ def test_train():
     # Test that we learn correctly to predict two outputs, each latched to
     # one particular input, with opposite signs
     sizes = [10, 5, 2]
-    n_samples = 1000
+    n_samples = 200
     batch_size = 50
     training_input = np.random.random((n_samples, sizes[0]))
     for j in range(sizes[0]):
@@ -135,8 +144,53 @@ def test_train():
                 end = min(n_samples, begin + batch_size)
                 n.train(training_input[begin:end], training_output[begin:end])
         e1 = np.sqrt(np.mean((n.predict(training_input) - training_output) ** 2, axis=0))
-        print e1, e0
-        assert np.all(e1 < e0 * 0.5)
+        # with these parameters (batching and momentum are particularly useful),
+        # training should reduce error to about 5% of the initial
+        assert np.all(e1 < e0 * 0.1)
+
+
+def test_copy():
+    sizes = [10, 5, 2]
+    n_samples = 200
+    batch_size = 50
+    training_input = np.random.random((n_samples, sizes[0]))
+
+    n = NN(sizes, [Tanh] * (len(sizes) - 1), init_w_scale=0.1, eta=0.5, momentum=0.95)
+    training_output = np.vstack((0.999 * ((training_input[:, 0] > 0.5) * 2 - 1),
+                                 0.999 * ((training_input[:, sizes[0] / 2] < 0.5) * 2 - 1))).T
+    n_out_0 = n.predict(training_input)
+    cn = n.copy()
+    cn_out_0 = cn.predict(training_input)
+    assert np.array_equal(n_out_0, cn_out_0)
+
+    # do some training of the original network
+    for _ in range(10):
+        for begin in range(0, n_samples, batch_size):
+            end = min(n_samples, begin + batch_size)
+            n.train(training_input[begin:end], training_output[begin:end])
+
+    # the original network has changed
+    n_out_1 = n.predict(training_input)
+    assert not np.array_equal(n_out_0, n_out_1)
+    # but the copy is intact
+    assert np.array_equal(cn_out_0, cn.predict(training_input))
+
+    # Now do the exact same training on the copy
+    for _ in range(10):
+        for begin in range(0, n_samples, batch_size):
+            end = min(n_samples, begin + batch_size)
+            cn.train(training_input[begin:end], training_output[begin:end])
+    cn_out_1 = cn.predict(training_input)
+    # now the output of the copy is the same as the output of the original
+    assert np.array_equal(n_out_1, cn_out_1)
+
+    # Train some more and check they still go together
+    for _ in range(10):
+        for begin in range(0, n_samples, batch_size):
+            end = min(n_samples, begin + batch_size)
+            n.train(training_input[begin:end], training_output[begin:end])
+            cn.train(training_input[begin:end], training_output[begin:end])
+            assert np.array_equal(n.predict(training_input), cn.predict(training_input))
 
 
 if __name__ == "__main__":
@@ -144,3 +198,5 @@ if __name__ == "__main__":
     if test:
         test_gradients()
         test_train()
+        test_copy()
+        print "Passed all tests!"

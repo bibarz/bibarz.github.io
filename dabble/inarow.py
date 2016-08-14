@@ -11,6 +11,15 @@ from matplotlib import pylab
 from nn import NN, Tanh
 
 
+def all_states(shape):
+    l = np.prod(shape)
+    all_states = (np.arange(3 ** l)[:, None] / (3 ** np.arange(l))[None, :]) % 3
+    diff = np.sum(all_states == 1, axis=1) - np.sum(all_states == 2, axis=1)
+    good_states = (diff == 0) | (diff == 1)  # either player one has one more move or both players have the same
+    all_states = all_states[good_states].reshape((-1, ) + shape)
+    return all_states
+
+
 def lengths(state):
     '''
     :param state: n x m matrix of (0, 1, 2)
@@ -82,37 +91,74 @@ def is_terminal(state, L):
 
 
 class ValueNet(object):
-    def __init__(self, shape, layer_sizes = []):
+    def __init__(self, shape, layer_sizes=[], batch_size=50, eta=0.1, momentum=0.9):
         self._shape = shape
         all_sizes = [np.prod(shape)] + layer_sizes + [1]
-        self._n = NN(all_sizes, [Tanh] * len(all_sizes) - 1, eta=0.1, momentum=0.)
+        self._n = NN(all_sizes, [Tanh] * (len(all_sizes) - 1), eta=eta, momentum=momentum)
+        self._batch_size = batch_size
+        self._batch_states = np.zeros((self._batch_size, np.prod(self._shape)))
+        self._batch_values = np.zeros((self._batch_size, 1))
+        self._batch_idx = 0
 
-    def _reshape(self, data):
+    def copy(self):
+        c = ValueNet(self._shape, [], self._batch_size)
+        c._n = self._n.copy()
+        c._batch_states = self._batch_states.copy()
+        c._batch_values = self._batch_values.copy()
+        c._batch_idx = self._batch_idx
+        return c
+
+    def _reshape_batch(self, data):
         '''
         Turn a batch of 2d (0, 1, 2) game states into a batch of 1d (-1., 0., 1.) states
         '''
         return np.reshape(data - 3 * (data > 1.5), (data.shape[0], -1)).astype(np.float)
 
+    def _reshape_single(self, state):
+        '''
+        Turn a single 2d (0, 1, 2) state into a single 1d (-1., 0., 1.) state
+        '''
+        return self._reshape_batch(np.array([state]))[0]
+
     def get_values(self, states):
-        return self._n.predict(self._reshape(states))
+        return self._n.predict(self._reshape_batch(states))
+
+    def get_single_value(self, state):
+        return self.get_values(np.array([state]))[0]
 
     def learn_values(self, states, values):
-        self._n.train(self._reshape(states), values)
+        self._n.train(self._reshape_batch(states), values)
+
+    def learn_single_value(self, state, value):
+        '''
+        Will not learn immediately, but only when batch_size samples
+        have been gathered
+        '''
+        self._batch_states[self._batch_idx] = self._reshape_single(state)
+        self._batch_values[self._batch_idx] = value
+        self._batch_idx += 1
+        if self._batch_idx == self._batch_size:
+            self._n.train(self._batch_states, self._batch_values)
+            self._batch_idx = 0
 
 
 class Game(object):
-    def __init__(self, shape, L, player_1, player_2):
+    def __init__(self, shape, L, player_1, player_2, debug=True):
         self._L = L
         self._players = [player_1, player_2]
         self._turn = 1
+        self._debug = debug
 
     def play(self, state):
         move = self._players[self._turn - 1].play(state)
-        assert move in available_moves(state)
+        if self._debug:
+            assert move in available_moves(state)
         state[move[0], move[1]] = self._turn
         self._turn = 3 - self._turn
         return state
 
+    def reset(self):
+        self._turn = 1
 
 class InterfacePlayer(object):
     def __init__(self, name, number):
@@ -149,7 +195,8 @@ def length_terminal_value(state):
 
 
 class AlphaBetaPlayer(object):
-    def __init__(self, name, number, L, depth, gamma, terminal_value_function, use_alphabeta=True):
+    def __init__(self, name, number, L, depth, gamma,
+                 terminal_value_function, use_alphabeta=True, learner=None, rng=None):
         self._name = name
         assert number in [1, 2]
         self._number = number
@@ -158,42 +205,53 @@ class AlphaBetaPlayer(object):
         self._gamma = gamma
         self._terminal_value_function = terminal_value_function
         self._use_alphabeta = use_alphabeta
+        self._learner = learner
+        self.last_v = None
+        if rng is None:
+            rng = np.random.RandomState()
+        self._rng = rng
 
     def play(self, state):
         sign = [1, -1][self._number - 1]  # +1 for player 1, -1 for player 2
-        v, a = self._minmax_alphabeta(state, self._depth, -1e9, 1e9, sign)
-        print("player %i thinks move to %s will produce value %.4f" % (self._number, a, v))
+        v, a = self._minmax_alphabeta(state, self._depth, 1e9, sign)
+        if self._learner is not None:
+            self._learner.learn_single_value(state, v)
+        self.last_v = v
         return a
 
-    def _minmax_alphabeta(self, state, depth, alpha, beta, sign):
+    def get_value(self, state):
+        self.play(state)
+        return self.last_v
+
+    def _minmax_alphabeta(self, state, depth, alpha, sign):
         '''
-        alphabeta is [alpha, beta]
         sign=1 for max and player 1, -1 for min and player 2
+        alpha plays the role of beta if sign is 1 or alpha if sign is -1
         '''
         if is_terminal(state, self._L):
             return hard_reward(state, self._L), None
         if depth == 0:
-            v = self._terminal_value_function(state)
-            return v, None
+            return self._terminal_value_function(state), None
         max_v = -1e9
-        best_a = None
-        moves = available_moves(state)
-        alphabeta = [alpha, beta]
-        alphabeta_to_pass = [alpha, beta]  # we must wipe out beta (max) or alpha (min) when we pass it down to the next layer
-        alphabeta_to_pass[sign > 0] = sign * 1e9
-        for a in moves:
+        best_a = [None]
+        for a in available_moves(state):
             new_state = state.copy()
             new_state[a[0], a[1]] = 1 + (sign < 0)
-            v, _ = self._minmax_alphabeta(new_state, depth - 1, alphabeta_to_pass[0], alphabeta_to_pass[1], -sign)
-            v *= (sign * self._gamma)
-            if v > max_v:
-                max_v = v
-                best_a = a
-            if self._use_alphabeta and v > sign * alphabeta[sign > 0]:
+            v, _ = self._minmax_alphabeta(new_state, depth - 1, -max_v, -sign)
+            v *= self._gamma
+            assert abs(v) < 1e8  # should never happen that the return value is uninitialized
+            if self._learner is not None:
+                self._learner.learn_single_value(new_state, v)
+            v *= sign
+            if v >= max_v:
+                if v == max_v:
+                    best_a.append(a)
+                else:
+                    max_v = v
+                    best_a = [a]
+            if self._use_alphabeta and v > alpha:
                 break
-            if self._use_alphabeta and v > sign * alphabeta_to_pass[sign < 0]:
-                alphabeta_to_pass[sign < 0] = sign * v
-        return sign * max_v, best_a
+        return sign * max_v, best_a[self._rng.randint(len(best_a))]
 
 
 def draw(state, scale=50):
@@ -278,19 +336,86 @@ def test_alphabeta():
                 assert np.array_equal(state, state_raw)
 
 
+def self_play():
+    shape = (3, 3)
+    L = 3
+    all_s = all_states(shape)
+    all_1 = np.sum(all_s == 1, axis=(1, 2))
+    all_2 = np.sum(all_s == 2, axis=(1, 2))
+    assert np.all((all_1 - all_2 == 1) | (all_1 == all_2))
+    p1_s = all_s[all_1 == all_2]
+    p2_s = all_s[all_1 > all_2]
+    p1 = AlphaBetaPlayer("p1", 1, L, np.prod(shape), 0.99, length_terminal_value, use_alphabeta=True)
+    p2 = AlphaBetaPlayer("p2", 2, L, np.prod(shape), 0.99, length_terminal_value, use_alphabeta=True)
+    v1 = [p1.get_value(s) for s in p1_s]
+    v2 = [p2.get_value(s) for s in p2_s]
+    all_s = np.concatenate((p1_s, p2_s), axis=0)
+    all_v = np.hstack((v1, v2))
+
+    golden_starts = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    golden_states = [np.zeros(shape) for _ in golden_starts]
+    for s, (i, j) in zip(golden_states, golden_starts):
+        s[i, j] = 1.
+
+    v = ValueNet(shape, [20], eta=0.025)
+    for _ in range(100):
+        v.learn_values(all_s, all_v)
+        current_values = [v.get_single_value(s) for s in golden_states]
+        print("current: %s" % (current_values, ))
+
+
+
+    L = 3
+    gamma = 0.99
+    shape = (3, 3)
+
+    golden_starts = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    golden_states = [np.zeros(shape) for _ in golden_starts]
+    for s, (i, j) in zip(golden_states, golden_starts):
+        s[i, j] = 1.
+#    golden_values = [0.92274469442792, 0.9414801494009999, -0.9135172474836407, 0.9414801494009999]
+    golden_values = []
+    golden_player = AlphaBetaPlayer("golden", 2, L, 11, gamma, length_terminal_value, use_alphabeta=True)
+    for s in golden_states:
+        _ = golden_player.play(s)
+        golden_values.append(golden_player.last_v)
+    print("Golden values: %s" % golden_values)
+
+    v = ValueNet(shape, [20], eta=0.025)
+    for round in range(5000):
+        if round % 50 == 0:
+            frozen_v = v.copy()
+            if (round % 100 == 0):
+                p1 = AlphaBetaPlayer("p1", 1, L, 3, gamma, v.get_single_value, use_alphabeta=False, learner=v, rng=np.random.RandomState(0))
+                p2 = AlphaBetaPlayer("p2", 2, L, 3, gamma, frozen_v.get_single_value, use_alphabeta=True, rng=np.random.RandomState(0))
+            else:
+                p1 = AlphaBetaPlayer("p1", 1, L, 3, gamma, frozen_v.get_single_value, use_alphabeta=True, rng=np.random.RandomState(0))
+                p2 = AlphaBetaPlayer("p2", 2, L, 3, gamma, v.get_single_value, use_alphabeta=False, learner=v, rng=np.random.RandomState(0))
+            game = Game(shape, L, p1, p2, debug=False)
+        state = np.zeros(shape)
+        game.reset()
+        while not is_terminal(state, L):
+            state = game.play(state)
+        if (round % 50 == 0):
+            current_values = [v.get_single_value(s) for s in golden_states]
+            print("current: %s; golden: %s" % (current_values, golden_values))
+
+
 if __name__ == "__main__":
     test = False
     if test:
         test_alphabeta()
         test_lengths()
         test_available_moves()
+        print "Passed all tests!"
     else:
-        L = 3
-        shape = (3, 4)
-        state = np.zeros(shape)
-        p1 = InterfacePlayer("p1", 1)
-        p2 = AlphaBetaPlayer("p2", 2, L, 12, 0.99, length_terminal_value, use_alphabeta=True)
-        game = Game(shape, L, p1, p2)
-        while not is_terminal(state, L):
-            state = game.play(state)
-        print hard_reward(state, L)
+        self_play()
+        # L = 3
+        # shape = (3, 4)
+        # state = np.zeros(shape)
+        # p1 = InterfacePlayer("p1", 1)
+        # p2 = AlphaBetaPlayer("p2", 2, L, 12, 0.99, length_terminal_value, use_alphabeta=True)
+        # game = Game(shape, L, p1, p2)
+        # while not is_terminal(state, L):
+        #     state = game.play(state)
+        # print hard_reward(state, L)
