@@ -10,7 +10,7 @@ import random
 
 
 if __name__ == "__main__":
-    nrec = 100000000
+    nrec = 100000
     with open("/media/psf/Home/linux-home/Borja/Cursos/kaggle/bimbo/train.csv", 'rb') as csvfile:
         reader = csv.reader(csvfile)
         headings = reader.next()
