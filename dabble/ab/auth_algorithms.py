@@ -1,16 +1,16 @@
 # Import any required libraries or modules.
 import numpy as np
-import cv2
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 import csv
+import sys
 
 
 class MetaParams:
-    n_lda_ensemble = 51
+    n_lda_ensemble = 101
     lda_ensemble_feature_fraction = 0.4
-    mode = 'lda_ensemble'
+    mode = 'nonlinear'
 
 
 # The following is a hacky container for Statistics computed from the
@@ -22,19 +22,25 @@ Global = lambda: None
 Global.ready = False
 
 
-def pca_converter(data, explained_variance):
+def pca_converter(data, feature_discriminabilities, explained_variance):
     '''
-    :param explained_variance: ratio of explained variance (between 0 and 1) that will determine how many components are kept
+    PCA conversion of the data. The PCA is based on the complete dataset, but each feature
+        is normalized to a std dev proportional to the given discriminability.
+    :param data: n_samples x n_features matrix with all data to do PCA on
+    :param feature_discriminabilities: n_features length vector
+    :param explained_variance: ratio of explained variance (between 0 and 1) that will
+        determine how many components are kept
     :return: function transforming data into pca components, and covariance matrix
         of transformed data
     '''
     mu = np.mean(data, axis=0)
-    std = np.std(data, axis=0)
+    std = np.std(data, axis=0) / feature_discriminabilities
     normalized_data = (data - mu) / std
     u, s, vt = np.linalg.svd(normalized_data)
     cut_idx = np.argmin(np.abs(np.cumsum(s * s) / np.sum(s * s) - explained_variance))
     vt = vt[:cut_idx + 1]
-    return (lambda x, mu=mu, std=std, vt=vt: np.dot((x - mu) / std, vt.T)), np.diag(s[:cut_idx + 1] ** 2 / (len(data) - 1))
+    return (lambda x, mu=mu, std=std, vt=vt: np.dot((x - mu) / std, vt.T)),\
+           np.diag(s[:cut_idx + 1] ** 2 / (len(data) - 1))
 
 
 def preprocess_data(data):
@@ -76,7 +82,7 @@ def get_random_feature_selector(n_all_features, feature_fraction, seed):
     n_features = int(np.round(feature_fraction * n_all_features))
     rng = np.random.RandomState(seed)
     p = rng.permutation(n_all_features)[:n_features]
-    return lambda x, p=p: x[:, p]
+    return lambda x, p=p: x[..., p]
 
 
 def simple_gaussian(user_pca):
@@ -112,8 +118,7 @@ def lda(user_pca, all_pca_cov, n_all):
         the user data was part of the dataset, and that the mean of the whole dataset
         is 0 for every feature
     :param n_all: number of samples that formed the complete dataset
-    :return: Fisher discriminant vector, threshold and discriminability (i.e., avg variance
-        of the discriminant)
+    :return: Fisher discriminant vector, threshold
     '''
     n_user = len(user_pca)
     assert n_user < n_all - 1  # make sure the complete dataset has more than just the current user
@@ -137,9 +142,24 @@ def lda(user_pca, all_pca_cov, n_all):
     others_proj_mu = np.dot(others_mu, ld_vector)
     user_proj_std = np.sqrt(np.dot(ld_vector, np.dot(user_sigma, ld_vector)))
     others_proj_std = np.sqrt(np.dot(ld_vector, np.dot(others_sigma, ld_vector)))
-    discriminability = (user_proj_mu - others_proj_mu) ** 2 / (user_proj_std**2 + others_proj_std**2)
     ld_threshold = (others_proj_std * user_proj_mu + user_proj_std * others_proj_mu) / (user_proj_std + others_proj_std)
-    return ld_vector, ld_threshold, discriminability
+    return ld_vector, ld_threshold
+
+
+def compute_feature_discriminabilities(each_preprocessed):
+    '''
+    Return a vector of discriminability for each feature
+    :param each_preprocessed: list with one n_samples x n_features data matrix for each user
+    :return: vector of discriminabilities (sqrt of the square of the difference of means divided by
+        the sum of variances) for each feature
+    '''
+    n_users = len(each_preprocessed)
+    each_mu = np.array([np.mean(m, axis=0) for m in each_preprocessed])  # n_users x n_features
+    each_var = np.array([np.var(m, axis=0) for m in each_preprocessed])  # n_users x n_features
+    # compute discriminability for each feature and pair of users
+    pairwise_discriminability = (each_mu[:, None, :] - each_mu[None :, :]) ** 2 / (1e-6 + each_var[:, None, :] + each_var[None :, :])
+    # compute discriminability of each feature as the average over pairs of users
+    return np.sqrt(np.sum(pairwise_discriminability, axis=(0, 1)) / (n_users * (n_users - 1)))
 
 
 def _prepare_global(training_dataset):
@@ -151,18 +171,21 @@ def _prepare_global(training_dataset):
     :param training_dataset: the complete dataset
     :return: None. The Global container is initialized with all necessary data
     '''
-    all_users = training_dataset.keys()
-    all_raw = np.vstack([training_dataset[u] for u in all_users])
-    all_preprocessed = preprocess_data(all_raw)
+    each_preprocessed = [preprocess_data(training_dataset[u]) for u in training_dataset]
+    Global.feature_discriminabilities = compute_feature_discriminabilities(each_preprocessed)
+
+    all_preprocessed = np.vstack(each_preprocessed)
     Global.n_all = len(all_preprocessed)
-    Global.pca, Global.all_pca_cov = pca_converter(all_preprocessed, explained_variance=0.95)
+    Global.pca, Global.all_pca_cov = pca_converter(all_preprocessed, Global.feature_discriminabilities, explained_variance=0.98)
     if MetaParams.mode == 'lda_ensemble':
         Global.lda_ensemble = []
         for i in range(MetaParams.n_lda_ensemble):
             seed = np.random.randint(200000)
             feature_selector = get_random_feature_selector(all_preprocessed.shape[1],
                                                            feature_fraction=MetaParams.lda_ensemble_feature_fraction, seed=seed)
-            selected_pca, selected_pca_cov = pca_converter(feature_selector(all_preprocessed), explained_variance=0.99)
+            selected_pca, selected_pca_cov = pca_converter(feature_selector(all_preprocessed),
+                                                           feature_selector(Global.feature_discriminabilities),
+                                                           explained_variance=0.99)
             Global.lda_ensemble.append({'selector': feature_selector, 'pca': selected_pca, 'pca_cov': selected_pca_cov})
     Global.ready = True
 
@@ -180,18 +203,18 @@ def build_template(user, training_dataset):
     if MetaParams.mode in ['lda', 'simple', 'combined']:
         user_pca = Global.pca(user_preprocessed)
         template['mean_pca'], template['std_pca'] = simple_gaussian(user_pca)
-        template['ld_vector'], template['ld_threshold'], template['discriminability'] =\
+        template['ld_vector'], template['ld_threshold'] =\
             lda(user_pca, all_pca_cov=Global.all_pca_cov, n_all=Global.n_all)
 
     if MetaParams.mode == 'lda_ensemble':
         lda_ensemble = []
         for lda_item in Global.lda_ensemble:
             user_selected_pca = lda_item['pca'](lda_item['selector'](user_preprocessed))
-            ld_vector, ld_threshold, discriminability = lda(user_selected_pca, n_all=Global.n_all, all_pca_cov=lda_item['pca_cov'])
-            lda_ensemble.append({'ld_vector': ld_vector, 'ld_threshold': ld_threshold, 'discriminability': discriminability})
+            ld_vector, ld_threshold = lda(user_selected_pca, n_all=Global.n_all, all_pca_cov=lda_item['pca_cov'])
+            lda_ensemble.append({'ld_vector': ld_vector, 'ld_threshold': ld_threshold})
         template['lda_ensemble'] = lda_ensemble
 
-    if MetaParams.mode in ['classifier', 'combined']:
+    if MetaParams.mode in ['nonlinear', 'combined']:
         template['clf_1'] = scikit_classifier(user, training_dataset, generator=lambda: KNeighborsClassifier(5))
         template['clf_2'] = scikit_classifier(user, training_dataset, generator=lambda: svm.LinearSVC(C=0.05, class_weight='balanced'))
     return template
@@ -201,7 +224,7 @@ def build_template(user, training_dataset):
 # Return the authenttication score and threshold above which you consider it being a correct user.
 def authenticate(instance, user, templates):
     mode = MetaParams.mode
-    assert mode in ['lda', 'combined', 'lda_ensemble', 'classifier', 'simple'], ("Unrecognized mode: %s" % mode)
+    assert mode in ['lda', 'combined', 'lda_ensemble', 'nonlinear', 'simple'], ("Unrecognized mode: %s" % mode)
     t = templates[user]
     batch_mode = instance.ndim > 1
     if not batch_mode:
@@ -213,7 +236,7 @@ def authenticate(instance, user, templates):
         user_lda_proj = np.dot(user_pca, t['ld_vector'])
         lda_score, lda_thr = user_lda_proj - t['ld_threshold'], np.zeros(len(user_lda_proj))
 
-    if mode in ['classifier', 'combined']:
+    if mode in ['nonlinear', 'combined']:
         user_pca = Global.pca(preprocessed_instance)
         clf_score_1, clf_thr_1 = (t['clf_1'].predict(user_pca) == 0).astype(np.float), 0.5 * np.ones(len(user_pca))
         clf_score_2, clf_thr_2 = (t['clf_2'].predict(user_pca) == 0).astype(np.float), 0.5 * np.ones(len(user_pca))
@@ -222,24 +245,22 @@ def authenticate(instance, user, templates):
         user_pca = Global.pca(preprocessed_instance)
         z = (user_pca - t['mean_pca']) / t['std_pca']
         distance = np.mean(np.abs(z) ** 2, axis=1) ** 0.5
-        score, thr = distance, 1.35 * np.ones(len(distance))
+        score, thr = distance, 1.2 * np.ones(len(distance))
 
     if mode == 'lda_ensemble':
         ensemble_scores = np.empty((len(preprocessed_instance), len(t['lda_ensemble'])))
-        discriminabilities = np.empty_like(ensemble_scores)
         for i, sub_t in enumerate(t['lda_ensemble']):
             g_item = Global.lda_ensemble[i]
-            discriminabilities[:, i] = sub_t['discriminability']
             user_selected_pca = g_item['pca'](g_item['selector'](preprocessed_instance))
             user_thinned_lda_proj = np.dot(user_selected_pca, sub_t['ld_vector'])
             ensemble_scores[:, i] = user_thinned_lda_proj - sub_t['ld_threshold']
 
-        score = np.sum((ensemble_scores > 0) * discriminabilities, axis=1) / np.sum(discriminabilities, axis=1)
+        score = np.mean(ensemble_scores > 0, axis=1)
         thr = 0.5 * np.ones(len(score))
 
     if mode == 'lda':
         score, thr = lda_score, lda_thr
-    elif mode == 'classifier':
+    elif mode == 'nonlinear':
         score, thr = clf_score_1, clf_thr_1
     elif mode == 'combined':
         score = np.mean(np.vstack((lda_score > lda_thr, clf_score_1 > clf_thr_1, clf_score_2 > clf_thr_2)), axis=0)
@@ -301,9 +322,9 @@ def cross_validate(full_dataset, print_results=False):
                 true_reject += np.sum(score <= threshold)
 
         if print_results:
-            print "fold %i: bad reject rate: %.1f, bad accept rate: %.1f" % (i,
-                                                                             100. * float(false_reject) / (false_reject + true_accept),
-                                                                             100. * float(false_accept) / (false_accept + true_reject))
+            print "fold %i: false reject rate: %.1f%%, false accept rate: %.1f%%" %\
+                  (i, 100. * float(false_reject) / (false_reject + true_accept),
+                   100. * float(false_accept) / (false_accept + true_reject))
         all_false_accept += false_accept
         all_false_reject += false_reject
         all_true_accept += true_accept
@@ -313,7 +334,7 @@ def cross_validate(full_dataset, print_results=False):
     false_accept_percent = 100. * float(all_false_accept) / (all_false_accept + all_true_reject)
 
     if print_results:
-        print "Total: bad reject rate: %.1f, bad accept rate: %.1f" % (false_reject_percent, false_accept_percent)
+        print "Total: false reject rate: %.1f%%, false accept rate: %.1f%%" % (false_reject_percent, false_accept_percent)
 
     return false_reject_percent, false_accept_percent
 
@@ -321,7 +342,7 @@ def cross_validate(full_dataset, print_results=False):
 
 if __name__ == "__main__":
     # Reading the data into the training dataset separated by user.
-    data_training_file = open('dataset_training.csv', 'rb')
+    data_training_file = open(sys.argv[1], 'rb')
     csv_training_reader = csv.reader(data_training_file, delimiter=',', quotechar='"')
     csv_training_reader.next()
     full_dataset = dict()
@@ -341,4 +362,4 @@ if __name__ == "__main__":
                 rej, acc = cross_validate(full_dataset)
                 tot_rej += rej
                 tot_acc += acc
-            print "f=%.2f, n=%i, tot_rej=%.2f, tot_acc=%.2f" % (feature_fraction, n_lda_ensemble, tot_rej / n_trials, tot_acc / n_trials)
+            print "feature fraction=%.2f, ensemble size=%i, false_rej=%.2f%%, false_acc=%.2f%%" % (feature_fraction, n_lda_ensemble, tot_rej / n_trials, tot_acc / n_trials)
