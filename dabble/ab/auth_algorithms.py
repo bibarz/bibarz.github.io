@@ -10,7 +10,7 @@ import sys
 class MetaParams:
     n_lda_ensemble = 101
     lda_ensemble_feature_fraction = 0.4
-    mode = 'nonlinear'
+    mode = 'lda_ensemble'
 
 
 # The following is a hacky container for Statistics computed from the
