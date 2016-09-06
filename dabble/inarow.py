@@ -1,13 +1,6 @@
-import collections
-import math
 import cv2
 import scipy.weave
 import numpy as np
-import time
-import os
-import random
-import tensorflow as tf
-from matplotlib import pylab
 from nn import NN, Tanh
 
 
@@ -93,10 +86,10 @@ def is_terminal(state, L):
 class ValueNet(object):
     def __init__(self, shape, layer_sizes=[], batch_size=50, eta=0.1, momentum=0.9):
         self._shape = shape
-        all_sizes = [np.prod(shape)] + layer_sizes + [1]
+        all_sizes = [np.prod(shape) * 3] + layer_sizes + [1]
         self._n = NN(all_sizes, [Tanh] * (len(all_sizes) - 1), eta=eta, momentum=momentum)
         self._batch_size = batch_size
-        self._batch_states = np.zeros((self._batch_size, np.prod(self._shape)))
+        self._batch_states = np.zeros((self._batch_size, all_sizes[0]))
         self._batch_values = np.zeros((self._batch_size, 1))
         self._batch_idx = 0
 
@@ -110,9 +103,25 @@ class ValueNet(object):
 
     def _reshape_batch(self, data):
         '''
-        Turn a batch of 2d (0, 1, 2) game states into a batch of 1d (-1., 0., 1.) states
+        Turn a batch of 2d (0, 1, 2) game states into a batch of one-hot, 1d vectors
+            where each square in the original game board is 3 values,
+            (1, 0, 0) for empty, (0, 1, 0) for player 1, and (0, 0, 1) for player 2
         '''
-        return np.reshape(data - 3 * (data > 1.5), (data.shape[0], -1)).astype(np.float)
+        reshaped_data = np.reshape(data, (data.shape[0], -1))
+        output = np.zeros((data.shape[0], 3 * np.prod(data.shape[1:])))
+        code = '''
+            for(int i = 0; i < Nreshaped_data[0]; ++i) {
+                for(int j = 0; j < Nreshaped_data[1]; ++j) {
+                    output(i, 3 * j + (int)reshaped_data(i, j)) = 1;
+                }
+            }
+        '''
+        scipy.weave.inline(
+            code, ['reshaped_data', 'output'],
+            type_converters=scipy.weave.converters.blitz, compiler='gcc',
+            extra_compile_args=["-O3"]
+        )
+        return output
 
     def _reshape_single(self, state):
         '''
@@ -350,19 +359,21 @@ def self_play():
     v1 = [p1.get_value(s) for s in p1_s]
     v2 = [p2.get_value(s) for s in p2_s]
     all_s = np.concatenate((p1_s, p2_s), axis=0)
-    all_v = np.hstack((v1, v2))
+    all_v = np.hstack((v1, v2))[:, None]
 
     golden_starts = [(0, 0), (0, 1), (1, 0), (1, 1)]
     golden_states = [np.zeros(shape) for _ in golden_starts]
     for s, (i, j) in zip(golden_states, golden_starts):
         s[i, j] = 1.
+    golden_indices = [np.where(np.all(all_s == g, axis=(1,2)))[0][0] for g in golden_states]
 
-    v = ValueNet(shape, [20], eta=0.025)
-    for _ in range(100):
+    v = ValueNet(shape, [20, 20], eta=0.025, momentum=0.8)
+    for iteration in range(10000):
         v.learn_values(all_s, all_v)
         current_values = [v.get_single_value(s) for s in golden_states]
-        print("current: %s" % (current_values, ))
-
+        if iteration % 100 == 0:
+            print("current: %s; golden: %s" % (current_values, all_v[golden_indices, 0]))
+    assert False
 
 
     L = 3

@@ -342,7 +342,7 @@ def cross_validate(full_dataset, print_results=False):
 
 if __name__ == "__main__":
     # Reading the data into the training dataset separated by user.
-    data_training_file = open(sys.argv[1], 'rb')
+    data_training_file = open('dataset_training.csv', 'rb')
     csv_training_reader = csv.reader(data_training_file, delimiter=',', quotechar='"')
     csv_training_reader.next()
     full_dataset = dict()
