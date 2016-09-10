@@ -32,6 +32,7 @@ def quick_connected_components(all_sets, edges):
 
 def jaccard_graph(m, all_lengths, all_first, all_last, min_jaccard):
     jaccard_coeff = min_jaccard / (1 + min_jaccard)
+    assert m.dtype == np.uint8
     code = '''
         py::list edges;
         for (int i = 1; i < Nm[0]; ++i) {
@@ -44,14 +45,18 @@ def jaccard_graph(m, all_lengths, all_first, all_last, min_jaccard):
                 int min_intersect = (int)(u * jaccard_coeff) + 1;
                 if (std::min(length_i, length_j) < min_intersect) continue;
                 int the_min = std::max(i_min, (int)all_first(j));
-                int the_max = std::min(i_max, (int)all_last(j)) + 1;  // not inclusive
+                int the_max = std::min(i_max, (int)all_last(j)) + 1;
+                if (the_max - the_min < min_intersect) continue;
+                unsigned char* p = &m(i, the_min);
+                unsigned char* q = &m(j, the_min);
                 for (int k = the_min; k < the_max; ++k) {
-                    if (the_max - k < min_intersect) break;
-                    if (m(i, k) && m(j, k)) --min_intersect;
-                    if (min_intersect <= 0) {
-                        edges.append(j);
-                        edges.append(i);
-                        break;
+                    if ((*p++) & (*q++)) {
+                        --min_intersect;
+                        if (min_intersect <= 0) {
+                            edges.append(j);
+                            edges.append(i);
+                            break;
+                        }
                     }
                 }
             }
