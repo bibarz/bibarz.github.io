@@ -18,6 +18,16 @@ def quick_jaccard_graph(m, all_lengths, min_jaccard):
     edges[1::2] = ei
     return edges
 
+def quick_connected_components(all_sets, edges):
+    adj = np.zeros((len(all_sets), len(all_sets)), dtype=np.int)
+    adj[edges[::2], edges[1::2]] = 1
+    adj[edges[1::2], edges[::2]] = 1
+    L = np.diag(np.sum(adj, axis=1)) - adj
+    u, s, v = np.linalg.svd(L)
+    null_dim = np.sum(s <= 1e-9)
+    return null_dim
+
+
 
 def jaccard_graph(m, all_lengths, all_first, all_last, min_jaccard):
     jaccard_coeff = min_jaccard / (1 + min_jaccard)
@@ -56,45 +66,97 @@ def jaccard_graph(m, all_lengths, all_first, all_last, min_jaccard):
     return edges
 
 
+def connected_components(n_vertices, edges):
+    parent = np.arange(n_vertices, dtype=np.int)
+    rank = np.zeros(n_vertices, dtype=np.int)
+    code = '''
+        for (int i=0; i < edges.size(); i+=2) {
+            int u = edges[i];
+            int v = edges[i + 1];
+            int root_u = u;
+            int root_v = v;
+            while (parent(root_u) != root_u) root_u = parent(root_u);
+            while (parent(root_v) != root_v) root_v = parent(root_v);
+            if (root_u == root_v) continue;
+            int rank_u = rank(root_u);
+            int rank_v = rank(root_v);
+            if (rank_u > rank_v) {
+                parent(root_v) = root_u;
+            }
+            else {
+                parent(root_u) = root_v;
+                rank(root_v) = std::max(rank_v, 1 + rank_u);
+            }
+        }
+        for (int i=0; i < parent.size(); ++i) {
+            int root_u = parent(i);
+            while (parent(root_u) != root_u) root_u = parent(root_u);
+            parent(i) = root_u;
+        }
+    '''
+    scipy.weave.inline(
+        code, ['edges', 'parent', 'rank'],
+        type_converters=scipy.weave.converters.blitz, compiler='gcc',
+        extra_compile_args=["-O3"]
+    )
+    return parent
+
+
 def nonnullcols(line):
     return tuple(line.notnull().nonzero()[0])
 
 
 def main():
-    nchunks = 20
-    chunksize = 5000
+    nchunks = 100
+    chunksize = 500
     path_categorical = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_categorical.csv"
     path_numeric = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_numeric.csv"
     reader_categorical = pd.read_table(path_categorical, chunksize=chunksize, header=0, sep=',')
     reader_numeric = pd.read_table(path_numeric, chunksize=chunksize, header=0, sep=',')
     i = 0
-    all_sets = set()
+    all_hashes = []
+    hash_dict = {}
     for chunk_categorical, chunk_numeric in itertools.izip(reader_categorical, reader_numeric):
         chunk_categorical.set_index('Id', inplace=True)
         chunk_numeric.set_index('Id', inplace=True)
         assert chunk_categorical.index.equals(chunk_numeric.index)
         whole_chunk = pd.concat((chunk_categorical, chunk_numeric), axis=1)
-        all_sets.update(whole_chunk.apply(nonnullcols, axis=1).unique())
+        feature_indices = whole_chunk.apply(nonnullcols, axis=1)
+        hashes = feature_indices.apply(hash)
+        all_hashes.append(hashes)
+        hash_dict.update(dict(zip(hashes, feature_indices)))
         i += 1
-        print i, len(all_sets)
+        print i
         if i == nchunks:
             break
-    all_sets = list(all_sets)
-    all_lengths = np.array([len(s) for s in all_sets])
-    all_first = np.array([s[0] for s in all_sets])
-    all_last = np.array([s[-1] for s in all_sets])
+    hash_series = pd.concat(all_hashes)
+    unique_hashes = hash_series.unique()
+    unique_feature_sets = [hash_dict[h] for h in unique_hashes]
+    n_sets = len(unique_feature_sets)
+    idx_series = hash_series.map(pd.Series(np.arange(n_sets), index=unique_hashes))
+    all_features = whole_chunk.columns.tolist()
+    import cPickle
+    with open('sets.pkl', 'w') as f:
+        cPickle.dump((unique_feature_sets, idx_series, all_features), f, protocol=-1)
+        cPickle.dump(all_features, f)
+
+    all_lengths = np.array([len(s) for s in unique_feature_sets])
+    all_first = np.array([s[0] for s in unique_feature_sets])
+    all_last = np.array([s[-1] for s in unique_feature_sets])
     print np.mean(all_lengths), np.median(all_lengths)
-    m = np.zeros((len(all_sets), np.amax([np.amax(s) for s in all_sets if len(s)]) + 1), dtype=np.uint8)
-    for i, s in enumerate(all_sets):
+    m = np.zeros((len(unique_feature_sets), np.amax(all_last) + 1), dtype=np.uint8)
+    for i, s in enumerate(unique_feature_sets):
         m[i, s] = 1
-    J = jaccard_graph(m, all_lengths, all_first, all_last, 0.9)
-    # J2 = quick_jaccard_graph(m, all_lengths, 0.9)
-    # assert np.array_equal(J, J2)
-    # adj = ((J > 0) & (J < 0.1)).astype(np.int)
-    # L = np.diag(np.sum(adj, axis=1)) - adj
-    # u, s, v = np.linalg.svd(L)
-    # null_dim = np.sum(s <= 1e-9)
-    print len(J)
+    edges = jaccard_graph(m, all_lengths, all_first, all_last, 0.9)
+    # edges_2 = quick_jaccard_graph(m, all_lengths, 0.9)
+    # assert np.array_equal(edges, edges_2)
+
+    cc = connected_components(n_sets, edges)
+    num_components = len(np.unique(cc))
+    # num_components_2 = quick_connected_components(all_sets, edges)
+    # assert num_components_2 == num_components
+
+    print n_sets, num_components
 
 
 if __name__ == "__main__":
@@ -107,3 +169,4 @@ if __name__ == "__main__":
 
     p = pstats.Stats("prof")
     p.strip_dirs().sort_stats('time').print_stats(30)
+    p.print_callers('isinstance')
