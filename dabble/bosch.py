@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import itertools
 import scipy.weave
+import cPickle
 
 
 def quick_jaccard_graph(m, all_lengths, min_jaccard):
@@ -43,12 +44,11 @@ def jaccard_graph(m, all_lengths, all_first, all_last, min_jaccard):
                 int min_intersect = (int)(u * jaccard_coeff) + 1;
                 if (std::min(length_i, length_j) < min_intersect) continue;
                 int the_min = std::max(i_min, (int)all_first(j));
-                int the_max = std::min(i_max, (int)all_last(j));
-                if (the_max - the_min < min_intersect - 1) continue;
-                int tot = 0;
-                for (int k = the_min; k <= the_max; ++k) {
-                    if (m(i, k) && m(j, k)) ++tot;
-                    if (tot >= min_intersect) {
+                int the_max = std::min(i_max, (int)all_last(j)) + 1;  // not inclusive
+                for (int k = the_min; k < the_max; ++k) {
+                    if (the_max - k < min_intersect) break;
+                    if (m(i, k) && m(j, k)) --min_intersect;
+                    if (min_intersect <= 0) {
                         edges.append(j);
                         edges.append(i);
                         break;
@@ -106,9 +106,9 @@ def nonnullcols(line):
     return tuple(line.notnull().nonzero()[0])
 
 
-def main():
-    nchunks = 100
-    chunksize = 500
+def compute_feature_sets(filename):
+    nchunks = 300
+    chunksize = 5000
     path_categorical = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_categorical.csv"
     path_numeric = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_numeric.csv"
     reader_categorical = pd.read_table(path_categorical, chunksize=chunksize, header=0, sep=',')
@@ -119,7 +119,8 @@ def main():
     for chunk_categorical, chunk_numeric in itertools.izip(reader_categorical, reader_numeric):
         chunk_categorical.set_index('Id', inplace=True)
         chunk_numeric.set_index('Id', inplace=True)
-        assert chunk_categorical.index.equals(chunk_numeric.index)
+        chunk_numeric.drop(['Response'], axis=1, inplace=True)  # every record has response, do not use it for grouping
+        # assert chunk_categorical.index.equals(chunk_numeric.index)
         whole_chunk = pd.concat((chunk_categorical, chunk_numeric), axis=1)
         feature_indices = whole_chunk.apply(nonnullcols, axis=1)
         hashes = feature_indices.apply(hash)
@@ -132,17 +133,27 @@ def main():
     hash_series = pd.concat(all_hashes)
     unique_hashes = hash_series.unique()
     unique_feature_sets = [hash_dict[h] for h in unique_hashes]
-    n_sets = len(unique_feature_sets)
-    idx_series = hash_series.map(pd.Series(np.arange(n_sets), index=unique_hashes))
+    idx_series = hash_series.map(pd.Series(np.arange(len(unique_feature_sets)), index=unique_hashes))
     all_features = whole_chunk.columns.tolist()
-    import cPickle
-    with open('sets.pkl', 'w') as f:
+    with open(filename, 'w') as f:
         cPickle.dump((unique_feature_sets, idx_series, all_features), f, protocol=-1)
-        cPickle.dump(all_features, f)
+    return
 
+
+def load_feature_sets(filename):
+    with open(filename, 'r') as f:
+        unique_feature_sets, idx_series, all_features = cPickle.load(f)
+    return unique_feature_sets, idx_series, all_features
+
+
+def main():
+    unique_feature_sets, idx_series, all_features = load_feature_sets('sets.pkl')
+    unique_feature_sets = unique_feature_sets[:10000]
+    idx_series = idx_series[idx_series < 10000]
+    n_sets = len(unique_feature_sets)
     all_lengths = np.array([len(s) for s in unique_feature_sets])
-    all_first = np.array([s[0] for s in unique_feature_sets])
-    all_last = np.array([s[-1] for s in unique_feature_sets])
+    all_first = np.array([(s[0] if len(s) else -1) for s in unique_feature_sets])
+    all_last = np.array([(s[-1] if len(s) else -1) for s in unique_feature_sets])
     print np.mean(all_lengths), np.median(all_lengths)
     m = np.zeros((len(unique_feature_sets), np.amax(all_last) + 1), dtype=np.uint8)
     for i, s in enumerate(unique_feature_sets):
@@ -160,6 +171,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # main()
     import cProfile, pstats
     profiler = cProfile.Profile()
     try:
@@ -168,5 +180,5 @@ if __name__ == "__main__":
         profiler.dump_stats('prof')
 
     p = pstats.Stats("prof")
-    p.strip_dirs().sort_stats('time').print_stats(30)
+    p.strip_dirs().sort_stats('cumtime').print_stats(100)
     p.print_callers('isinstance')
