@@ -5,6 +5,50 @@ import scipy.weave
 import cPickle
 
 
+def unite(g):
+    return set.union(*[set(s) for s in g])
+
+def min_max_jaccard(frame):
+    if len(frame) == 1:
+        return pd.Series(dict(count=1, min_j=1., max_j=1.))
+    m = np.zeros((len(frame['unique_feature_sets']), 3109), dtype=np.uint8)
+    for i, s in enumerate(frame['unique_feature_sets']):
+        m[i, s] = 1
+    all_lengths = np.array([len(s) for s in frame['unique_feature_sets']])
+    all_first = np.array([(s[0] if len(s) else -1) for s in frame['unique_feature_sets']])
+    all_last = np.array([(s[-1] if len(s) else -1) for s in frame['unique_feature_sets']])
+    J_minmax = np.array([1., 0.])
+    code = '''
+        for (int i = 1; i < Nm[0]; ++i) {
+            int i_min = all_first(i);
+            int i_max = all_last(i);
+            int length_i = all_lengths(i);
+            for (int j = 0; j < i; ++j) {
+                int length_j = all_lengths(j);
+                int u = length_i + length_j;
+                int the_min = std::max(i_min, (int)all_first(j));
+                int the_max = std::min(i_max, (int)all_last(j)) + 1;
+                unsigned char* p = &m(i, the_min);
+                unsigned char* q = &m(j, the_min);
+                double intersect = 0;
+                for (int k = the_min; k < the_max; ++k) {
+                    if ((*p++) & (*q++)) intersect += 1.0;
+                }
+                double J = intersect / (u - intersect);
+                if (J < J_minmax(0)) J_minmax(0) = J;
+                if (J > J_minmax(1)) J_minmax(1) = J;
+            }
+        }
+    '''
+    scipy.weave.inline(
+        code, ['m', 'all_lengths', 'all_first', 'all_last', 'J_minmax'],
+        type_converters=scipy.weave.converters.blitz, compiler='gcc',
+        extra_compile_args=["-O3"]
+    )
+    return pd.Series(dict(count=len(frame), max_j = J_minmax[1], min_j = J_minmax[0]))
+
+
+
 def quick_jaccard_graph(m, all_lengths, min_jaccard):
     m = m.astype(np.int)  # to avoid overflow in the dot product!
     intersect = np.dot(m, m.T)
@@ -18,6 +62,7 @@ def quick_jaccard_graph(m, all_lengths, min_jaccard):
     edges[::2] = ej
     edges[1::2] = ei
     return edges
+
 
 def quick_connected_components(all_sets, edges):
     adj = np.zeros((len(all_sets), len(all_sets)), dtype=np.int)
@@ -153,8 +198,8 @@ def load_feature_sets(filename):
 
 def main():
     unique_feature_sets, idx_series, all_features = load_feature_sets('sets.pkl')
-    unique_feature_sets = unique_feature_sets[:10000]
-    idx_series = idx_series[idx_series < 10000]
+    unique_feature_sets = unique_feature_sets[:1000]
+    idx_series = idx_series[idx_series < 1000]
     n_sets = len(unique_feature_sets)
     all_lengths = np.array([len(s) for s in unique_feature_sets])
     all_first = np.array([(s[0] if len(s) else -1) for s in unique_feature_sets])
@@ -163,7 +208,7 @@ def main():
     m = np.zeros((len(unique_feature_sets), np.amax(all_last) + 1), dtype=np.uint8)
     for i, s in enumerate(unique_feature_sets):
         m[i, s] = 1
-    edges = jaccard_graph(m, all_lengths, all_first, all_last, 0.9)
+    edges = jaccard_graph(m, all_lengths, all_first, all_last, 0.85)
     # edges_2 = quick_jaccard_graph(m, all_lengths, 0.9)
     # assert np.array_equal(edges, edges_2)
 
@@ -173,6 +218,19 @@ def main():
     # assert num_components_2 == num_components
 
     print n_sets, num_components
+    cluster_sizes = np.bincount(cc)
+    print "cc sizes", cluster_sizes[cluster_sizes > 0]
+    idx_frame = pd.concat([idx_series, pd.Series(cc[idx_series.values], index=idx_series.index, name='cc')], axis=1)
+
+    g = pd.DataFrame(dict(cc=cc, unique_feature_sets=unique_feature_sets)).groupby(cc)
+    maxisets = g.aggregate({'unique_feature_sets': unite})
+    record_counts = np.bincount(record_cluster)
+    print "cc record sizes", record_counts[record_counts > 0]
+    # h = g.apply(min_max_jaccard)
+    # print "max", h['max_j'][h['max_j'] < 1].median()
+    # print "min", h['min_j'][h['min_j'] < 1].median()
+    # print h
+
 
 
 if __name__ == "__main__":
