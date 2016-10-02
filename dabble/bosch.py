@@ -8,9 +8,11 @@ import time
 import gc
 from collections import defaultdict
 from sklearn.cross_validation import KFold
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble.weight_boosting import AdaBoostClassifier
+from sklearn.neighbors import KNeighborsClassifier, RadiusNeighborsClassifier
 from sklearn.svm import SVC, LinearSVC
+from sklearn.tree.tree import DecisionTreeClassifier
 
 
 def pca_converter(data, feature_discriminabilities, explained_variance):
@@ -646,7 +648,7 @@ def _predict_cluster(train_categorical, train_numeric, train_response, test_cate
     other_positives_numeric = other_positives_numeric.loc[:, variant_numeric]
     numeric_stats = _make_stats_numeric(train_numeric)
     if remove_invariant:
-        variant_categorical = (categorical_stats['unique'] > 1)
+        variant_categorical = (categorical_stats['unique'] > 2)
         train_categorical = train_categorical.loc[:, variant_categorical]
         test_categorical = test_categorical.loc[:, variant_categorical]
         other_positives_categorical = other_positives_categorical.loc[:, variant_categorical]
@@ -669,7 +671,7 @@ def _predict_cluster(train_categorical, train_numeric, train_response, test_cate
                                                           index=other_positives_categorical.index.values, name='Response')))
     train_present = (train_categorical.count(axis=1) + train_numeric.count(axis=1)) / (len(train_categorical.columns) + len(train_numeric.columns))
 
-    # Notice now we use training and testing to get the mean to replace nans
+    # Notice now we use both training and testing to get the mean to replace nans
     numeric_stats = _make_stats_numeric(pd.concat((train_numeric, test_numeric), axis=0))
     # Fill numeric nans with the training + testing mean
     train_numeric = train_numeric.fillna(numeric_stats['mean'], axis=0)
@@ -677,7 +679,7 @@ def _predict_cluster(train_categorical, train_numeric, train_response, test_cate
 
     # Transform categorical data into consecutive numbers
     all_categorical = pd.concat((train_categorical, test_categorical), axis=0)
-    all_categorical = all_categorical.rank(axis=1, method='dense', na_option='bottom')
+    all_categorical = all_categorical.rank(axis=0, method='dense', na_option='bottom')
     train_ranked_categorical = all_categorical.iloc[:len(train_categorical)]
     test_ranked_categorical = all_categorical.iloc[len(train_categorical):]
 
@@ -705,17 +707,31 @@ def _predict_cluster(train_categorical, train_numeric, train_response, test_cate
     train_resample = train_resample.drop('Response', axis=1)
     # print("Added %i other positives, resampled positives from %.3f to %.3f positives" % (len(other_positives_categorical), positive_rate, resampled_response.mean()))
 
-    # clf = SVC(C=0.05, kernel='linear')
-    # clf = LinearSVC(C=0.01, penalty='l1', dual=False, class_weight='balanced')
-    clf = RandomForestClassifier(n_estimators=250, criterion='gini', max_depth=20, class_weight='balanced')
-    # clf = KNeighborsClassifier(n_neighbors=3, weights='distance')
-    clf.fit(train_resample, resampled_response)
-    result = clf.predict(all_test_data)
-    return clf, result
+    parts = []
+    results = []
+    for l in ['L']:
+        features = [s for s in train_resample.columns.values if s[:1] == l]
+        if len(features) > 0:
+            parts.append(features)
+    print "part lengths:", [len(s) for s in parts]
+    for p in parts:
+        # clf = SVC(C=0.05, kernel='linear')
+        # clf = LinearSVC(C=0.01, penalty='l1', dual=False, class_weight='balanced')
+        clf = RandomForestClassifier(n_estimators=250, criterion='gini', max_depth=20, class_weight='balanced')
+        # clf = GradientBoostingClassifier(n_estimators=300, learning_rate=1.0, max_depth=8)
+        clf2 = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=10, class_weight='balanced'), n_estimators=50)
+        # clf2 = KNeighborsClassifier(n_neighbors=5, weights='distance')
+        clf2 = RadiusNeighborsClassifier()
+        clf.fit(train_resample.loc[:, p], resampled_response)
+        fi = clf.feature_importances_
+        clf2.fit(train_resample.loc[:, p] * fi, resampled_response)
+        results.append(clf2.predict(all_test_data.loc[:, p] * fi))
+    result = np.sum(np.vstack(results), axis=0) > 0
+    return result
 
 
 def main():
-    dirname = 'clustereddata_600_best60'
+    dirname = 'clustereddata_300_best50'
     with open('positives.pkl', 'r') as f:
         all_positives_categorical, all_positives_numeric = cPickle.load(f)
 
@@ -725,7 +741,7 @@ def main():
     all_idx = np.argsort(sizes)[::-1]  # biggest first
     all_TP = all_TN = all_FP = all_FN = 0
     tot_records = 0
-    for idx in all_idx[:60]:
+    for idx in all_idx[40:45]:
         train_file = os.path.join(dirname, all_train_files[idx])
         test_file = train_file.replace('train', 'test')
         with open(train_file, 'r') as f:
@@ -752,10 +768,10 @@ def main():
             validation_categorical = train_categorical.iloc[test]
             validation_numeric = train_numeric.iloc[test]
             validation_response = train_response.iloc[test]
-            clf, response = _predict_cluster(train_categorical_chunk, train_numeric_chunk, train_response_chunk,
-                                             validation_categorical, validation_numeric,
-                                             other_positives_categorical, other_positives_numeric,
-                                             remove_absent=remove_absent, remove_invariant=remove_invariant)
+            response = _predict_cluster(train_categorical_chunk, train_numeric_chunk, train_response_chunk,
+                                        validation_categorical, validation_numeric,
+                                        other_positives_categorical, other_positives_numeric,
+                                        remove_absent=remove_absent, remove_invariant=remove_invariant)
             score, TP, TN, FP, FN = _matthews_correlation(validation_response, response)
             print "Score: %.3f, positives %i, true %i, false %i" % (score, np.sum(validation_response), TP, FP)
             all_TP += TP
