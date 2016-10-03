@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 import itertools
+from sklearn.base import BaseEstimator, ClassifierMixin
 import tensorflow as tf
 import scipy.weave
 import matplotlib.pyplot as plt
+import matplotlib.dates as dates
 import cPickle
 import os
 import cv2
@@ -18,6 +20,7 @@ from sklearn.ensemble.weight_boosting import AdaBoostClassifier
 from sklearn.neighbors import KNeighborsClassifier, RadiusNeighborsClassifier
 from sklearn.svm import SVC, LinearSVC
 from sklearn.tree.tree import DecisionTreeClassifier
+from sklearn.manifold import TSNE
 
 
 def monto_vec(x, idx):
@@ -32,28 +35,32 @@ def conv_relu(input, kernel_shape, stride):
     weights = tf.get_variable("weights", kernel_shape, initializer=tf.truncated_normal_initializer(
         mean=0., stddev=0.01 / np.sqrt(np.prod(kernel_shape[:3]))))
     biases = tf.get_variable("biases", kernel_shape[-1:], initializer=tf.constant_initializer(0.0))
-    conv = tf.nn.conv2d(input, weights, [1, stride, 1], padding='SAME')
+    conv = tf.nn.conv2d(input, weights, [1, stride, 1, 1], padding='SAME')
 #   conv_max = tf.nn.avg_pool(conv, [1, stride, 1], [1, stride, 1], padding='SAME')
     return tf.nn.relu(conv + biases)
 
 
-def model(data, data_length, n_channels, n_outputs):
-    kernel_defs = [(8, 8, 2), (2, 8, 2)]  # each conv layer, (patch_side, n_kernels, stride)
-    fc_sizes = [128]
+def model(data, data_length, n_channels, n_outputs, dropout_keep_prob):
+    kernel_defs = [(8, 8, 2)]  # each conv layer, (patch_side, n_kernels, stride)
+    fc_sizes = [64]
     n_input_kernels = n_channels
     for i, k in enumerate(kernel_defs):
         with tf.variable_scope("conv_%i" % i):
-            kernel_shape = (k[0], n_input_kernels, k[1])
+            kernel_shape = (k[0], 1, n_input_kernels, k[1])
             data = conv_relu(data, kernel_shape, k[2])
             n_input_kernels = k[1]
 
     for i, n in enumerate(fc_sizes):
         with tf.variable_scope("fc_%i" % i):
             if i == 0:
-                previous_n = kernel_defs[-1][1] * data_length / np.prod([k[2] for k in kernel_defs])**2
+                previous_n = data_length
+                for k in kernel_defs:
+                    previous_n = np.ceil(float(previous_n) / k[2]).astype(np.int)
+                previous_n *= kernel_defs[-1][1]
                 data = tf.reshape(data, [-1, previous_n])
             else:
                 previous_n = fc_sizes[i-1]
+            data = tf.nn.dropout(data, dropout_keep_prob, name="dropout_fc_%i" % i)
             weights = tf.get_variable("weights", [previous_n, n],
                                       initializer=tf.truncated_normal_initializer(mean=0., stddev=0.01 / np.sqrt(previous_n)))
             biases = tf.get_variable("biases", [n], initializer=tf.constant_initializer(0.0))
@@ -61,6 +68,7 @@ def model(data, data_length, n_channels, n_outputs):
             data = tf.nn.relu(relu_input)
 
     with tf.variable_scope("flat_out"):
+        data = tf.nn.dropout(data, dropout_keep_prob, name="dropout_flat_out")
         weights = tf.get_variable("weights", [fc_sizes[-1], n_outputs],
                                   initializer=tf.truncated_normal_initializer(mean=0., stddev=0.01 / np.sqrt(fc_sizes[-1])))
         biases = tf.get_variable("biases", [n_outputs], initializer=tf.constant_initializer(0.0))
@@ -71,63 +79,105 @@ def make_learner(data_length, n_channels, n_outputs):
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
-
         # Input and teacher place holders
         things['input'] = tf.placeholder(tf.float32)
         things['output'] = tf.placeholder(tf.float32)
+        things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
 
-        things['logits'] = model(things['input'], data_length, n_channels, n_outputs)
+        things['logits'] = model(things['input'], data_length, n_channels, n_outputs, things['dropout_keep_prob'])
         things['loss'] = tf.reduce_mean(
             tf.nn.softmax_cross_entropy_with_logits(things['logits'], things['output']))
 
-        things['learner'] = tf.train.AdamOptimizer(0.001).minimize(things['loss'])
+        things['learner'] = tf.train.AdamOptimizer(0.01).minimize(things['loss'])
 
         # Predictors for the training, validation, and test data.
         things['prediction'] = tf.nn.softmax(things['logits'])
-        things['saver'] = tf.train.Saver()
+        things['init'] = tf.initialize_all_variables()
 
     return things
 
 
-class Convnet(object):
-    def __init__(self, data_length, n_channels, n_outputs, batch_size, n_passes):
-        self.things = make_learner(data_length, n_channels, n_outputs)
-        self._batch_size = batch_size
-        self._n_passes = n_passes
+def balance_classes(X, y):
+    '''
+    Assumes positive examples y==1 are scarce
+    '''
+    positive_training = np.where(y==1)[0]
+    negative_training = np.where(y==0)[0]
+    repeats = 1 + (len(negative_training) - len(positive_training)) / len(positive_training)
+    extra = (len(negative_training) - len(positive_training)) % len(positive_training)
+    print "positive:%i, negative:%i, repeats:%i, extra: %i" % (len(positive_training), len(negative_training), repeats, extra)
+    X = np.vstack((X[negative_training, ...], np.tile(X[positive_training, ...], (repeats, 1)), X[positive_training[:extra], ...]))
+    y = np.concatenate((y[negative_training, ...], np.tile(y[positive_training, ...], repeats), y[positive_training[:extra], ...]))
+    positive_training = np.where(y==1)[0]
+    negative_training = np.where(y==0)[0]
+    print "new positive:%i, new negative:%i" % (len(positive_training), len(negative_training))
+    return X, y
+
+
+class Convnet(BaseEstimator, ClassifierMixin):
+    def __init__(self, data_length=100, n_channels=1, n_outputs=2, batch_size=128, n_passes=2, dropout_keep_prob=0.7):
+        self.batch_size = batch_size
+        self.n_passes = n_passes
+        self.n_channels = n_channels
+        self.n_outputs = n_outputs
+        self.data_length = data_length
+        self.dropout_keep_prob = dropout_keep_prob
 
     def fit(self, X, y):
+        self.things = make_learner(self.data_length, self.n_channels, self.n_outputs)
         X, y = check_X_y(X, y)
+        X, y = balance_classes(X, y)
+
         n_training = len(X)
-        n_steps = (n_training * self._n_passes) / self._batch_size
+        n_steps = (n_training * self.n_passes) / self.batch_size
         things = self.things
-        with tf.Session(graph=things['graph']) as session:
-            tf.initialize_all_variables().run()
-            print('Initialized')
-            train_idx = np.random.permutation(n_training)
-            for step in range(n_steps):
-                offset = (step * batch_size) % n_training
-                if n_training - offset > self._batch_size:
-                    idx = np.concatenate((train_idx[offset:], training_idx[:self._batch_size - (n_training - offset)]))
-                else:
-                    idx = train_idx[offset:(offset + self._batch_size)]
-                batch_data = X[idx]
-                batch_labels = y[idx]
-                feed_dict = {things['input']: batch_data, things['output']: batch_labels}
-                session.run(things['learner'], feed_dict=feed_dict)
-                if (step % (n_steps / 10) == 0):
-                    l, predictions = session.run(
-                        [things['loss'], things['prediction']], feed_dict=feed_dict)
-                    print('Minibatch loss at step %d/%d: %.3f, accuracy %.1f%%' % (step, n_steps, l,
-                        100 * np.mean((predictions > 0.5) == batch_labels)))
+        self.session = tf.Session(graph=things['graph'])
+        session = self.session
+        session.run(things['init'])
+        print('Initialized')
+        train_idx = np.random.permutation(n_training)
+        for step in range(n_steps):
+            offset = (step * self.batch_size) % n_training
+            if n_training - offset > self.batch_size:
+                idx = train_idx[offset:(offset + self.batch_size)]
+            else:
+                idx = np.concatenate((train_idx[offset:], train_idx[:self.batch_size - (n_training - offset)]))
+            batch_data = X[idx, :][..., None, None]  # batch_size x n_feat x 1 x 1
+            batch_labels = y[idx][..., None].astype(np.float32)  # batch_size x 1
+            batch_labels = np.hstack((1 - batch_labels, batch_labels))  # batch_size x 2
+            feed_dict = {things['input']: batch_data, things['output']: batch_labels,
+                         things['dropout_keep_prob']: self.dropout_keep_prob}
+            session.run(things['learner'], feed_dict=feed_dict)
+            if (step % (n_steps / 10) == 0):
+                feed_dict[things['dropout_keep_prob']] = 1
+                l, predictions = session.run(
+                    [things['loss'], things['prediction']], feed_dict=feed_dict)
+                assert np.all(np.abs(1-np.sum(predictions, axis=1)) < 1e-5)
+                print('Minibatch loss at step %d/%d: %.3f, accuracy %.1f%%, fp=%i, fn=%i' % (step, n_steps, l,
+                    100.0 * np.mean(np.argmax(predictions, 1) == np.argmax(batch_labels, 1)),
+                    np.sum((predictions[:, 1]>0.5) & (batch_labels[:, 1]==0)),
+                    np.sum((predictions[:, 1]<0.5) & (batch_labels[:, 1]==1))))
+        print "I'M FIT!!!!"
+        return self
 
     def predict(self, X):
-        X = check_array(X)
+        print "GONNA PREDICT!!!!"
+        X = check_array(X)[..., None, None]
         things = self.things
-        feed_dict = {things['input']: X}
-        with tf.Session(graph=things['graph']) as session:
-            l, predictions = session.run(
-                [things['loss'], things['prediction']], feed_dict=feed_dict)
-        return (l > 0.5)
+        feed_dict = {things['input']: X, things['dropout_keep_prob']: 1.}
+        session = self.session
+        predictions = session.run(things['prediction'], feed_dict=feed_dict)
+        c = predictions > 0.5
+        return np.hstack((c, ~c)).astype(np.int)
+
+    def predict_proba(self, X):
+        print "GONNA PREDICT PROBA!!!!"
+        X = check_array(X)[..., None, None]
+        things = self.things
+        feed_dict = {things['input']: X, things['dropout_keep_prob']: 1.}
+        session = self.session
+        predictions = session.run(things['prediction'], feed_dict=feed_dict)
+        return np.hstack((predictions, 1 - predictions))
 
 
 def save_monto_matrix(filename):
@@ -212,7 +262,7 @@ def cumhist_montos(values):
     h, edges = np.histogram(values.ravel(), bins=nbins, density=True, range=[minmax[0] - 0.25 * range/nbins,
                                                                              minmax[1] + 0.25 * range/nbins])
     cumhist = np.concatenate(([0], np.cumsum(h) * np.mean(np.diff(edges))))
-    return cumhist, edges
+    return cumhist, edges + 0.125 * range / nbins
 
 
 def bin_montos(values, n_classes):
@@ -221,14 +271,20 @@ def bin_montos(values, n_classes):
     idx = np.unique(np.argmin(np.abs(levels[:, None] - cumhist[None, :]), axis=1))
     assert idx[0] == 0
     assert idx[-1] == len(cumhist) - 1
-    bins = edges[idx] + 0.125 * range / n_classes
+    bins = edges[idx]
     # h2, edges2 = np.histogram(values.ravel(), bins=bins)
     # print "distribution:", h2
     return bins
 
 
 def group_daily(monto, tipo, churn):
-    return monto.values, tipo.values, churn
+    return monto.values, tipo.values, churn.values
+
+
+def sum_all(monto, tipo, churn):
+    agg_montos = monto.sum(axis=1).values[:, None]
+    agg_tipos = common_tipo(tipo.values)[:, None]
+    return agg_montos, agg_tipos, churn.values
 
 
 def group_weekly(monto, tipo, churn):
@@ -241,7 +297,7 @@ def group_weekly(monto, tipo, churn):
     for i in range(len(idx) - 1):
         agg_montos[:, i] = monto.values[:, idx[i]:idx[i + 1]].sum(axis=1)
         agg_tipos[:, i] = common_tipo(tipo.values[:, idx[i]:idx[i + 1]])
-    return agg_montos, agg_tipos, churn
+    return agg_montos, agg_tipos, churn.values
 
 
 def group_rbf(monto, tipo, churn, period):
@@ -250,16 +306,31 @@ def group_rbf(monto, tipo, churn, period):
     rbf /= np.sum(rbf)
     agg_montos = cv2.filter2D(monto.values, cv2.CV_32F, rbf[None, :], borderType=cv2.BORDER_CONSTANT)
     agg_montos = agg_montos[:, period::(period + period / 2)]
-    agg_tipos = common_tipo(tipo.values)
-    return agg_montos, agg_tipos, churn
+    agg_tipos = common_tipo(tipo.values)[:, None]
+    return agg_montos, agg_tipos, churn.values
+
+
+def group_fft_band(monto, tipo, churn, with_phase=False):
+    fft = np.fft.rfft(monto.values, axis=1)
+    band_period_limits = np.array([0.1, 2.5, 5.5, 10, 200.])
+    k = np.ceil(monto.shape[1] / band_period_limits)[::-1].astype(np.int)  # fourier index coefficients corresponding to period limits
+    if not with_phase:
+        fft_montos = np.zeros((len(monto), 1 + len(k) - 1))
+        fft_montos[:, 0] = np.real(fft[:, 0])  # the total amount (frequency 0)
+        for i in range(len(k) - 1):
+            fft_montos[:, i + 1] = np.sum(np.abs(fft[:, k[i]:k[i + 1]]) ** 2, axis=1)
+    else:
+        assert False, "Not implemented"
+    agg_tipos = common_tipo(tipo.values)[:, None]
+    return fft_montos, agg_tipos, churn.values
 
 
 def group_fft(monto, tipo, churn):
     fft = np.fft.rfft(monto.values, axis=1)
     n_coeff = monto.shape[1] / 10  # reject high frequency
     fft_montos = np.hstack((np.real(fft[:, :n_coeff]), np.imag(fft)[:, 1:n_coeff]))
-    agg_tipos = common_tipo(tipo.values)
-    return fft_montos, agg_tipos, churn
+    agg_tipos = common_tipo(tipo.values)[:, None]
+    return fft_montos, agg_tipos, churn.values
 
 
 def discretize(monto, tipo, churn, n_classes, with_tipo=False):
@@ -273,7 +344,7 @@ def discretize(monto, tipo, churn, n_classes, with_tipo=False):
         onerr = tot_1 > tot_0
         print "0ers:", np.sum(zerrer), "churn 0:", 100 * np.mean(churn[zerrer])
         print "1ers:", np.sum(onerr), "churn 1:", 100 * np.mean(churn[onerr])
-        discretized = np.hstack((discretized, tipo[:, None]))
+        discretized = np.hstack((discretized, tipo))
     return discretized, churn
 
 
@@ -290,7 +361,7 @@ def discretize_columnwise(monto, tipo, churn, n_classes, with_tipo=False):
         onerr = tot_1 > tot_0
         print "0ers:", np.sum(zerrer), "churn 0:", 100 * np.mean(churn[zerrer])
         print "1ers:", np.sum(onerr), "churn 1:", 100 * np.mean(churn[onerr])
-        discretized = np.hstack((discretized, tipo[:, None]))
+        discretized = np.hstack((discretized, tipo))
     return discretized, churn
 
 
@@ -316,7 +387,29 @@ def equalize(monto, tipo, churn, with_tipo=False):
     return equalized, churn
 
 
-def predict_churn(n_months_to_use, grouper, conditioner, clf_factory):
+def load_data():
+    with open('monto_panda.pkl', 'r') as f:
+        monto = cPickle.load(f)
+    with open('tipo_panda.pkl', 'r') as f:
+        t_index, tipo = cPickle.load(f)
+    tipo[(tipo > 0) & (tipo < 255)] = 1
+    return monto, tipo
+
+
+def split_months(monto, tipo, month, n_months_to_use):
+    last_month_cols = monto.columns[monto.columns.month == month + n_months_to_use]
+    training_cols = monto.columns[(monto.columns.month >= month + 1) & (monto.columns.month <= month + n_months_to_use)]
+    result_cols = monto.columns[monto.columns.month == month + 1 + n_months_to_use]
+    good = (monto.loc[:, last_month_cols] != 0).any(axis=1)
+    training_monto = monto.loc[good, training_cols]
+    training_tipo = tipo.loc[good, training_cols]
+    result_monto = monto.loc[good, result_cols]
+    churn = (result_monto == 0).all(axis=1)
+    print "month %i, good are %i of %i; churners are %i of %i" % (month, good.sum(), len(good), churn.sum(), len(churn))
+    return training_monto, training_tipo, result_monto, churn
+
+
+def load_and_predict_churn(n_months_to_use, grouper, conditioner, clf_factory):
     '''
     grouper: function taking monto and tipo dataframes, and churn array,
         and returning grouped monto array, grouped tipo array, and churn
@@ -325,22 +418,14 @@ def predict_churn(n_months_to_use, grouper, conditioner, clf_factory):
         labels arrays
     clf_factory: function taking number of features and returning a classifier
     '''
-    with open('monto_panda.pkl', 'r') as f:
-        monto = cPickle.load(f)
-    with open('tipo_panda.pkl', 'r') as f:
-        t_index, tipo = cPickle.load(f)
-    tipo[(tipo > 0) & (tipo < 255)] = 1
+    monto, tipo = load_data()
+    predict_churn(monto, tipo, n_months_to_use, grouper, conditioner, clf_factory)
 
+
+def predict_churn(monto, tipo, n_months_to_use, grouper, conditioner, clf_factory):
+    scores = []
     for month in range(5 - n_months_to_use):
-        last_month_cols = monto.columns[monto.columns.month == month + n_months_to_use]
-        training_cols = monto.columns[(monto.columns.month >= month + 1) & (monto.columns.month <= month + n_months_to_use)]
-        result_cols = monto.columns[monto.columns.month == month + 1 + n_months_to_use]
-        good = (monto.loc[:, last_month_cols] != 0).any(axis=1)
-        training_monto = monto.loc[good, training_cols]
-        training_tipo = tipo.loc[good, training_cols]
-        result_monto = monto.loc[good, result_cols]
-        churn = (result_monto == 0).all(axis=1)
-        print "month %i, good are %i of %i; churners are %i of %i" % (month, good.sum(), len(good), churn.sum(), len(churn))
+        training_monto, training_tipo, result_monto, churn = split_months(monto, tipo, month, n_months_to_use)
 
         grouped_monto, grouped_tipo, churn = grouper(training_monto, training_tipo, churn)
         training_data, labels = conditioner(grouped_monto, grouped_tipo, churn)
@@ -349,6 +434,116 @@ def predict_churn(n_months_to_use, grouper, conditioner, clf_factory):
         clf = clf_factory(n_feat)
         score = cross_val_score(clf, training_data, churn, cv=3, scoring='roc_auc')
         print "score:", score
+        scores.append(np.mean(score))
+    return scores
+
+
+def hist_and_cum(values, bins):
+    h, edges = np.histogram(values.ravel(), bins=bins)
+    de = edges[1] - edges[0]
+    ch = np.cumsum(h) / float(np.sum(h))
+    fig, ax = plt.subplots()
+    fig.set_facecolor('white')
+    ax2 = ax.twinx()
+    ax.bar(edges[:-1], h, width=de, alpha=0.8)
+    ax2.bar(edges[:-1], ch, width=de, alpha=0.2, linewidth=0)
+    return ax, ax2
+
+
+def figurines():
+    monto, tipo = load_data()
+    # total = monto.sum(axis=1)
+    # ax, ax2 = hist_and_cum(total.values, 2000)
+    # ax.set_xlim([0., 1000.])
+    # ax2.set_xlim([0., 1000.])
+    # ax.set_xlabel("Total amount")
+    # ax.set_ylabel("Number of users")
+    # ax2.set_ylabel("Cumulative fraction of users")
+    # plt.show()
+    #
+    # single_values = monto.values.ravel()
+    # single_values = single_values[single_values != 0]
+    # ax, ax2 = hist_and_cum(single_values, 2000)
+    # ax.set_xlim([0., 50.])
+    # ax2.set_xlim([0., 50.])
+    # ax.set_xlabel("Amount")
+    # ax.set_ylabel("Number of transactions")
+    # ax2.set_ylabel("Cumulative fraction of users")
+    # plt.show()
+
+    # first_day = (monto!=0).idxmax(axis=1) - pd.datetime(year=2014, month=1, day=1)
+    # ax, ax2 = hist_and_cum(first_day.dt.days.values, len(monto.columns))
+    # ax.set_xlabel("Days since Jan 01 for first transaction")
+    # ax.set_ylabel("Number of users")
+    # ax2.set_ylabel("Cumulative fraction of users")
+    # plt.show()
+    last_day = (monto!=0).iloc[:, ::-1].idxmax(axis=1) - pd.datetime(year=2014, month=1, day=1)
+    ax, ax2 = hist_and_cum(last_day.dt.days.values, len(monto.columns))
+    ax.set_xlabel("Days since Jan 01 for last transaction")
+    ax.set_ylabel("Number of users")
+    ax2.set_ylabel("Cumulative fraction of users")
+    plt.show()
+
+    # daily_total = monto.sum(axis=0)
+    # fig, ax = plt.subplots()
+    # fig.set_facecolor('white')
+    # ax.plot_date(daily_total.index.to_pydatetime(), daily_total, 'v-')
+    # ax.xaxis.set_minor_locator(dates.WeekdayLocator(byweekday=(4),
+    #                                                 interval=1))
+    # ax.xaxis.set_minor_formatter(dates.DateFormatter('%d\n%a'))
+    # ax.xaxis.grid(True, which="minor")
+    # ax.yaxis.grid()
+    # ax.xaxis.set_major_locator(dates.MonthLocator())
+    # ax.xaxis.set_major_formatter(dates.DateFormatter('\n\n\n%b\n%Y'))
+    # ax.xaxis.grid(True, which="major", linewidth=2)
+    # ax.set_ylabel("Total amount of transactions")
+    # plt.show()
+
+    # daily_total = monto.mean(axis=0)
+    # fft_total = np.fft.rfft(daily_total.values)
+    # energy_total = np.abs(fft_total) ** 2
+    # energy_total /= np.sum(energy_total)
+    # fft_individual = np.fft.rfft(monto.values, axis=1)
+    # all_energy_individual = np.abs(fft_individual)**2
+    # mean_energy_individual = np.mean(all_energy_individual, axis=0)
+    # mean_energy_individual /= np.sum(mean_energy_individual)
+    # period = float(len(monto.columns)) / (np.arange(len(mean_energy_individual)) + 1e-6)
+    # fig, ax = plt.subplots()
+    # fig.set_facecolor('white')
+    # # ax.plot(period[3:], mean_energy_individual[3:])
+    # ax.set_xlabel("Period (days)")
+    # ax.set_ylabel("Avg spectral density")
+    # # plt.show()
+    # ax.set_ylabel("Spectral density of avg")
+    # ax.plot(period[3:], energy_total[3:])
+    # plt.show()
+
+def plot_tsne(n_months_to_use, grouper, conditioner):
+    '''
+    grouper: function taking monto and tipo dataframes, and churn array,
+        and returning grouped monto array, grouped tipo array, and churn
+    conditioner: function taking grouped monto and tipo arrays and churn array,
+        and returning discretized, equalized, scaled, centered training_data and
+        labels arrays
+    clf_factory: function taking number of features and returning a classifier
+    '''
+    monto, tipo = load_data()
+    tot_samples = 5000
+    for month in range(5 - n_months_to_use):
+        training_monto, training_tipo, result_monto, churn = split_months(monto, tipo, month, n_months_to_use)
+
+        grouped_monto, grouped_tipo, churn = grouper(training_monto, training_tipo, churn)
+        training_data, labels = conditioner(grouped_monto, grouped_tipo, churn)
+        subsample_idx = np.random.permutation(len(training_data))
+        training_data = training_data[subsample_idx[:tot_samples], ...]
+        labels = labels[subsample_idx[:tot_samples], ...]
+
+        model = TSNE(perplexity=20, n_components=2, n_iter=10000, verbose=10, min_grad_norm=1e-9)
+        data_2d = model.fit_transform(training_data)
+        fig, ax = plt.subplots()
+        ax.scatter(data_2d[:, 0], data_2d[:, 1], c=labels, cmap=plt.get_cmap('flag'))
+        fig.set_facecolor('white')
+        plt.show()
 
 
 def tipo_histogram():
@@ -365,19 +560,80 @@ def tipo_histogram():
     plt.show()
 
 
-if __name__ == "__main__":
-    # bin_montos('7D')
+def predictor_contest():
+    small_forest = lambda n_feat: RandomForestClassifier(n_estimators=25, class_weight='balanced',
+                                                   max_features=min(n_feat, max(4, 2 * np.ceil(np.sqrt(n_feat)).astype(np.int))),
+                                                   max_depth=5)
     forest = lambda n_feat: RandomForestClassifier(n_estimators=100, class_weight='balanced',
                                                    max_features=min(n_feat, max(4, 2 * np.ceil(np.sqrt(n_feat)).astype(np.int))),
                                                    max_depth=10)
     dummy = lambda n_feat: DummyClassifier()
-    convnet = lambda n_feat: Convnet(n_feat, 1, 1, batch_size=256, n_passes=2)
+    svc = lambda n_feat: LinearSVC(C=0.01)
+    convnet = lambda n_feat: Convnet(data_length=n_feat, n_channels=1, n_outputs=2, batch_size=1024,
+                                     n_passes=5, dropout_keep_prob=0.5)
+    predictors = [
+        ('dummy', group_daily, equalize, [dummy]),
+        ('sum', sum_all, equalize, [small_forest]),
+        ('daily', group_daily, equalize, [small_forest, forest]),
+        ('weekly', group_weekly, equalize, [small_forest, forest]),
+        ('rbf_3', lambda a, b, c: group_rbf(a, b, c, period=3), equalize, [small_forest, forest]),
+        ('rbf_7', lambda a, b, c: group_rbf(a, b, c, period=7), equalize, [small_forest, forest]),
+        ('fft', group_fft, lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10), [small_forest, forest]),
+        ('fft_band', group_fft_band, lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10), [small_forest, forest]),
+        ('convnet', group_daily, equalize, [convnet])
+    ]
+    monto, tipo = load_data()
 
-    # predict_churn(n_months_to_use=1, groupr=group_weekly)
-    predict_churn(n_months_to_use=3, grouper=group_fft,
-                  conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10, with_tipo=False),
-                  clf_factory=forest)
-    # predict_churn(n_months_to_use=1, groupr=lambda a, b, c: group_rbf(a, b, c, 7))
+    results = []
+    for name, g, e, clfs in predictors:
+        print "Trying out ", name
+        scores_monthly = np.empty((len(predictors), 4))
+        scores_tri = np.empty((len(predictors), 2))
+        for i, clf in enumerate(clfs):
+            scores_monthly[i] = predict_churn(monto, tipo, n_months_to_use=1, grouper=g, conditioner=e,clf_factory=clf)
+            scores_tri[i] = predict_churn(monto, tipo, n_months_to_use=3, grouper=g, conditioner=e,clf_factory=clf)
+        results.append((name, scores_monthly, scores_tri))
+    with open('rr.pkl', 'w') as f:
+        cPickle.dump(results, f)
+
+
+def table():
+    from tabulate import tabulate
+    with open('rr.pkl', 'r') as f:
+        results = cPickle.load(f)
+    names = []
+    all = np.empty((len(results), 6))
+    for i, (name, m, t) in enumerate(results):
+        m = np.amax(m, axis=0)
+        t = np.amax(t, axis=0)
+        names.append(name)
+        all[i, :4] = m
+        all[i, 4:] = t
+    f = pd.DataFrame(all, index=names, columns=['1_1', '1_2', '1_3', '1_4', '3_1', '3_2'])
+    print tabulate(f)
+
+
+if __name__ == "__main__":
+    # bin_montos('7D')
+    # tipo_histogram()
+    # figurines()
+
+    predictor_contest()
+    table()
+
+    # predict_churn(n_months_to_use=3, grouper=group_fft,
+    #               conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10, with_tipo=False),
+    #               clf_factory=forest)
+    # predict_churn(n_months_to_use=3, grouper=sum_all,
+    #               conditioner=equalize,#lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10, with_tipo=True),
+    #               clf_factory=svc)
+
+    # plot_tsne(n_months_to_use=4, grouper=group_fft_band,
+    #           conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=5, with_tipo=False))
+
+    # predict_churn(n_months_to_use=3, grouper=group_daily,
+    #               conditioner=equalize,
+    #               clf_factory=convnet)
     # import cProfile, pstats
     # profiler = cProfile.Profile()
     # try:
