@@ -1,3 +1,4 @@
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 import itertools
@@ -40,9 +41,16 @@ def conv_relu(input, kernel_shape, stride):
     return tf.nn.relu(conv + biases)
 
 
-def model(data, data_length, n_channels, n_outputs, dropout_keep_prob):
-    kernel_defs = [(8, 8, 2)]  # each conv layer, (patch_side, n_kernels, stride)
-    fc_sizes = [64]
+def model(data, data_length, n_channels, n_outputs, dropout_keep_prob, kernel_defs, fc_sizes):
+    '''
+    :param data:
+    :param data_length: number of features
+    :param n_channels: second dimension
+    :param n_outputs: classes
+    :param dropout_keep_prob:
+    :param kernel_defs: a list with, for each conv layer, a 3-tuple (patch_side, n_kernels, stride)
+    :param fc_sizes: a list with sizes of each fully connected layer
+    '''
     n_input_kernels = n_channels
     for i, k in enumerate(kernel_defs):
         with tf.variable_scope("conv_%i" % i):
@@ -75,7 +83,7 @@ def model(data, data_length, n_channels, n_outputs, dropout_keep_prob):
         return tf.matmul(data, weights) + biases
 
 
-def make_learner(data_length, n_channels, n_outputs):
+def make_learner(data_length, n_channels, n_outputs, kernel_defs, fc_sizes):
     things = {}
     things['graph'] = tf.Graph()
     with things['graph'].as_default():
@@ -84,7 +92,8 @@ def make_learner(data_length, n_channels, n_outputs):
         things['output'] = tf.placeholder(tf.float32)
         things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
 
-        things['logits'] = model(things['input'], data_length, n_channels, n_outputs, things['dropout_keep_prob'])
+        things['logits'] = model(things['input'], data_length, n_channels, n_outputs,
+                                 things['dropout_keep_prob'], kernel_defs, fc_sizes)
         things['loss'] = tf.reduce_mean(
             tf.nn.softmax_cross_entropy_with_logits(things['logits'], things['output']))
 
@@ -115,16 +124,27 @@ def balance_classes(X, y):
 
 
 class Convnet(BaseEstimator, ClassifierMixin):
-    def __init__(self, data_length=100, n_channels=1, n_outputs=2, batch_size=128, n_passes=2, dropout_keep_prob=0.7):
+    def __init__(self, data_length=100, n_channels=1, n_outputs=2, kernel_defs=[(8, 8, 2)], fc_sizes=[64],
+                 batch_size=128, n_passes=2, dropout_keep_prob=0.7):
+        '''
+        :param data_length: number of features
+        :param n_channels: second dimension
+        :param n_outputs: classes
+        :param dropout_keep_prob:
+        :param kernel_defs: a list with, for each conv layer, a 3-tuple (patch_side, n_kernels, stride)
+        :param fc_sizes: a list with sizes of each fully connected layer
+        '''
         self.batch_size = batch_size
         self.n_passes = n_passes
         self.n_channels = n_channels
         self.n_outputs = n_outputs
+        self.kernel_defs = deepcopy(kernel_defs)
+        self.fc_sizes = deepcopy(fc_sizes)
         self.data_length = data_length
         self.dropout_keep_prob = dropout_keep_prob
 
     def fit(self, X, y):
-        self.things = make_learner(self.data_length, self.n_channels, self.n_outputs)
+        self.things = make_learner(self.data_length, self.n_channels, self.n_outputs, self.kernel_defs, self.fc_sizes)
         X, y = check_X_y(X, y)
         X, y = balance_classes(X, y)
 
@@ -160,15 +180,15 @@ class Convnet(BaseEstimator, ClassifierMixin):
         print "I'M FIT!!!!"
         return self
 
-    def predict(self, X):
+    def predict(self, X, thr):
         print "GONNA PREDICT!!!!"
         X = check_array(X)[..., None, None]
         things = self.things
         feed_dict = {things['input']: X, things['dropout_keep_prob']: 1.}
         session = self.session
         predictions = session.run(things['prediction'], feed_dict=feed_dict)
-        c = predictions > 0.5
-        return np.hstack((c, ~c)).astype(np.int)
+        c = predictions > thr
+        return c[:, 0].astype(np.float)
 
     def predict_proba(self, X):
         print "GONNA PREDICT PROBA!!!!"
@@ -528,7 +548,7 @@ def plot_tsne(n_months_to_use, grouper, conditioner):
     clf_factory: function taking number of features and returning a classifier
     '''
     monto, tipo = load_data()
-    tot_samples = 5000
+    tot_samples = 50000
     for month in range(5 - n_months_to_use):
         training_monto, training_tipo, result_monto, churn = split_months(monto, tipo, month, n_months_to_use)
 
@@ -618,8 +638,8 @@ if __name__ == "__main__":
     # tipo_histogram()
     # figurines()
 
-    predictor_contest()
-    table()
+    # predictor_contest()
+    # table()
 
     # predict_churn(n_months_to_use=3, grouper=group_fft,
     #               conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10, with_tipo=False),
@@ -628,8 +648,8 @@ if __name__ == "__main__":
     #               conditioner=equalize,#lambda a, b, c: discretize_columnwise(a, b, c, n_classes=10, with_tipo=True),
     #               clf_factory=svc)
 
-    # plot_tsne(n_months_to_use=4, grouper=group_fft_band,
-    #           conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=5, with_tipo=False))
+    plot_tsne(n_months_to_use=4, grouper=group_fft_band,
+              conditioner=lambda a, b, c: discretize_columnwise(a, b, c, n_classes=5, with_tipo=False))
 
     # predict_churn(n_months_to_use=3, grouper=group_daily,
     #               conditioner=equalize,

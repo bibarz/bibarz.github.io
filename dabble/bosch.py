@@ -5,14 +5,96 @@ import scipy.weave
 import cPickle
 import os
 import time
+import xgboost
 import gc
 from collections import defaultdict
 from sklearn.cross_validation import KFold
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble.weight_boosting import AdaBoostClassifier
-from sklearn.neighbors import KNeighborsClassifier, RadiusNeighborsClassifier
+from sklearn.neighbors import KNeighborsClassifier, RadiusNeighborsClassifier, NearestNeighbors
 from sklearn.svm import SVC, LinearSVC
 from sklearn.tree.tree import DecisionTreeClassifier
+from imblearn.over_sampling import SMOTE, ADASYN, RandomOverSampler
+from imblearn.under_sampling import NearMiss, TomekLinks
+from athena import Convnet
+
+
+def check_feature_equality():
+    nchunks = 300
+    chunksize = 5000
+    fpath = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/feature_summary.csv"
+    fsum = pd.read_csv(fpath, header=0)
+    groups = fsum.groupby('digest')
+    for split in ['train', 'test']:
+        checked_cols = False
+        path = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical.csv"
+        reader = pd.read_table(path, chunksize=chunksize, header=0, sep=',')
+        i = 0
+        for chunk in reader:
+            if not checked_cols:
+                assert (chunk.columns==fsum['feature']).all()
+                checked_cols = True
+            for digest, g in groups:
+                columns = g.feature
+                for c in columns[1:]:
+                    if not chunk.loc[:, columns.iloc[0]].equals(chunk.loc[:, c]):
+                        different = chunk.loc[:, columns.iloc[0]].fillna(-9999) != chunk.loc[:, c].fillna(-9999)
+                        print "col %s differs from col %s: %s, %s" % (columns.iloc[0], c, chunk.loc[different, columns.iloc[0]], chunk.loc[different, c])
+            i += 1
+            print i
+            if i == nchunks:
+                break
+
+def clean_categorical():
+    nchunks = 300
+    chunksize = 5000
+    fpath = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/feature_summary.csv"
+    fsum = pd.read_csv(fpath, header=0)
+    cols = fsum.feature[~fsum.duplicate]
+    print cols
+    for split in ['train', 'test']:
+        path = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical_dirty.csv"
+        write_path = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical_clean.csv"
+        reader = pd.read_table(path, chunksize=chunksize, header=0, sep=',')
+        i = 0
+        for chunk in reader:
+            exists = os.path.exists(write_path)
+            nondupes = chunk.loc[:, cols]
+            nondupes = nondupes.set_index('Id')
+            if not exists:
+                print "from %i to %i cols" % (chunk.shape[1], nondupes.shape[1])
+            with open(write_path, 'a') as f:
+                nondupes.to_csv(f, sep=',', header=not exists, na_rep='')
+            i += 1
+            print i
+            if i == nchunks:
+                break
+
+
+def examine_date():
+    nchunks = 30
+    chunksize = 50
+    for split in ['train', 'test']:
+        grouped = False
+        path = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_date.csv"
+        reader = pd.read_table(path, chunksize=chunksize, header=0, sep=',')
+        i = 0
+        for chunk in reader:
+            if not grouped:
+                cols = chunk.columns
+                st = cols.str.rsplit('_', n=1).str[0]
+                groups = chunk.columns.groupby(st)
+                grouped = True
+            for station, columns in groups.iteritems():
+                for c in columns[1:]:
+                    if not chunk.loc[:, columns[0]].equals(chunk.loc[:, c]):
+                        different = chunk.loc[:, columns[0]].fillna(-9999) != chunk.loc[:, c].fillna(-9999)
+                        print "col %s differs from col %s: %s, %s" % (columns[0], c, chunk.loc[different, columns[0]].values,
+                                                                      chunk.loc[different, c].values)
+            i += 1
+            print i
+            if i == nchunks:
+                break
 
 
 def pca_converter(data, feature_discriminabilities, explained_variance):
@@ -394,20 +476,19 @@ def compute_feature_sets(filename):
     hash_series = {}
     all_responses = []
     for split in ['test', 'train']:
-        path_categorical = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical.csv"
-        path_numeric = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_numeric.csv"
-        reader_categorical = pd.read_table(path_categorical, chunksize=chunksize, header=0, sep=',')
-        reader_numeric = pd.read_table(path_numeric, chunksize=chunksize, header=0, sep=',')
+        paths = ["/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + ("_%s.csv" % (k, ))
+                 for k in ['categorical', 'date', 'numeric']]
+        readers = [pd.read_table(p, chunksize=chunksize, header=0, sep=',') for p in paths]
         i = 0
         all_hashes = []
-        for chunk_categorical, chunk_numeric in itertools.izip(reader_categorical, reader_numeric):
-            chunk_categorical = chunk_categorical.set_index('Id')
-            chunk_numeric = chunk_numeric.set_index('Id')
+        for chunks in itertools.izip(*readers):
+            chunks = [c.set_index('Id') for c in chunks]
             if split == 'train':
-                all_responses.append(chunk_numeric['Response'])
-                chunk_numeric = chunk_numeric.drop(['Response'], axis=1)  # every record has response, do not use it for grouping
-            # assert chunk_categorical.index.equals(chunk_numeric.index)
-            whole_chunk = pd.concat((chunk_categorical, chunk_numeric), axis=1)
+                all_responses.append(chunks[2]['Response'])  # chunks[2] is numeric
+                chunks[2] = chunks[2].drop(['Response'], axis=1)  # every record has response, do not use it for grouping
+            assert chunks[0].index.equals(chunks[1].index)
+            # assert chunks[0].index.equals(chunks[2].index)
+            whole_chunk = pd.concat(chunks, axis=1)
 
             feature_indices = whole_chunk.apply(nonnullcols, axis=1)
             hashes = feature_indices.apply(hash)
@@ -472,7 +553,7 @@ def cluster_maxisets(filename, n_clusters):
         maxminmean_J = g.apply(min_max_jaccard)
         maxisets['train_record_count'] = train_record_counts
         maxisets['test_record_count'] = test_record_counts
-        maxisets['all_record_count'] = train_record_counts + test_record_counts
+        maxisets['all_record_count'] = all_record_counts
         maxisets['response_rate'] = response_rate
         maxisets['feature_count'] = maxisets['unique_feature_set'].apply(lambda x: len(x))
         maxisets = maxisets.join(maxminmean_J)
@@ -490,8 +571,9 @@ def cluster_maxisets(filename, n_clusters):
               (record_averaged_J, record_averaged_cluster_size, all_record_counts.std() / all_record_counts.mean(),
                record_averaged_n_maxifeatures / record_averaged_n_features, entropy_gain))
 
-        print "First 60 sets:"
-        print maxisets[['all_record_count', 'train_record_count', 'set_count', 'max_j', 'min_j', 'mean_j', 'feature_count', 'response_rate']].sort_values(by=['all_record_count'])[-60:]
+        print "All sets:"
+        pd.options.display.max_rows = 9999
+        print maxisets[['all_record_count', 'train_record_count', 'set_count', 'max_j', 'min_j', 'mean_j', 'feature_count', 'response_rate']].sort_values(by=['all_record_count'])
 
     with open(filename, 'w') as f:
         cPickle.dump((maxisets, train_set_idx, test_set_idx), f, protocol=-1)
@@ -501,55 +583,59 @@ def cluster_maxisets(filename, n_clusters):
 def save_all_positives(filename):
     nchunks = 300
     chunksize = 5000
-    all_categorical_positives = []
-    all_numeric_positives = []
+    keys = ['categorical', 'date', 'numeric']
+    all_positives = [[] for _ in keys]
     split = 'train'
-    path_categorical = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical.csv"
-    path_numeric = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_numeric.csv"
-    reader_categorical = pd.read_table(path_categorical, chunksize=chunksize, header=0, sep=',')
-    reader_numeric = pd.read_table(path_numeric, chunksize=chunksize, header=0, sep=',')
+    paths = ["/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + ("_%s.csv" % (k, ))
+             for k in keys]
+    readers = [pd.read_table(p, chunksize=chunksize, header=0, sep=',') for p in paths]
     i = 0
-    for chunk_categorical, chunk_numeric in itertools.izip(reader_categorical, reader_numeric):
-        chunk_categorical = chunk_categorical.set_index('Id')
-        chunk_numeric = chunk_numeric.set_index('Id')
-        positives = chunk_numeric['Response'] > 0
-        all_categorical_positives.append(chunk_categorical[positives])
-        all_numeric_positives.append(chunk_numeric[positives])
-        print i
+    for chunks in itertools.izip(*readers):
+        chunks = [c.set_index('Id') for c in chunks]
+        positives = chunks[2]['Response'] > 0
+        for j, k in enumerate(keys):
+            all_positives[j].append(chunks[j][positives])
+        print "Chunk", i
         i += 1
         if i == nchunks:
             break
-    categorical = pd.concat(all_categorical_positives)
-    numeric = pd.concat(all_numeric_positives)
-    print "Total positives:", len(categorical)
+    all_positive_frames = tuple([pd.concat(c) for c in all_positives])
+    print "Total positives:", len(all_positive_frames[0])
     with open(filename, 'w') as f:
-        cPickle.dump((categorical, numeric), f, protocol=-1)
+        cPickle.dump(all_positive_frames, f, protocol=-1)
     return
+
+
+def dump_to_csv_cluster(dirname, cc, split, datadict):
+    for key, frame in datadict.iteritems():
+        path = os.path.join(dirname, 'group_%s_%s_%.6d.csv' % (split, key, cc))
+        exists = os.path.exists(path)
+        with open(path, 'a') as f:
+            frame.to_csv(f, sep=',', header=not exists, na_rep='')
 
 
 def distribute_data_in_clusters(maxiset_pickle_file):
     maxisets, train_set_idx, test_set_idx = load_maxisets(maxiset_pickle_file)
     set_idx = {'train': train_set_idx, 'test': test_set_idx}
-    n_groups = 60
+    n_groups = 0  # 0 meaning all
     best_cc = maxisets.sort_values(by='train_record_count').iloc[-n_groups:]
     best_cc['unique_feature_list'] = best_cc['unique_feature_set'].apply(lambda x:list(x))
     nchunks = 300
     chunksize = 5000
     dirname = "clustereddata_" + time.strftime('%y%m%d_%H%M%S', time.localtime())
     os.mkdir(dirname)
+    keys = ['categorical', 'date', 'numeric']
     for split in ['train', 'test']:
-        path_categorical = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_categorical.csv"
-        path_numeric = "/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + "_numeric.csv"
-        reader_categorical = pd.read_table(path_categorical, chunksize=chunksize, header=0, sep=',')
-        reader_numeric = pd.read_table(path_numeric, chunksize=chunksize, header=0, sep=',')
+        paths = ["/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + ("_%s.csv" % (k, ))
+                 for k in keys]
+        readers = [pd.read_table(p, chunksize=chunksize, header=0, sep=',') for p in paths]
         i = 0
-        gdic = defaultdict(list)
-        for chunk_categorical, chunk_numeric in itertools.izip(reader_categorical, reader_numeric):
-            chunk_categorical = chunk_categorical.set_index('Id')
-            chunk_numeric = chunk_numeric.set_index('Id')
-            idx_end_categorical = len(chunk_categorical.columns)
-            # assert chunk_categorical.index.equals(chunk_numeric.index)
-            whole_chunk = pd.concat((chunk_categorical, chunk_numeric), axis=1).join(set_idx[split]['cc'], how='inner')
+        for chunks in itertools.izip(*readers):
+            chunks = [c.set_index('Id') for c in chunks]
+            idx_end_categorical = len(chunks[0].columns)
+            idx_end_date = len(chunks[0].columns) + len(chunks[1].columns)
+            assert chunks[0].index.equals(chunks[1].index)
+            whole_chunk = pd.concat(chunks, axis=1).join(set_idx[split]['cc'], how='inner')
             if split == 'train':
                 response_idx = whole_chunk.columns.get_loc('Response')
             else:
@@ -559,53 +645,48 @@ def distribute_data_in_clusters(maxiset_pickle_file):
                 if cc in best_cc.index:
                     feat = np.array(best_cc.loc[cc]['unique_feature_list'], dtype=np.int)
                     categorical_idx = feat[feat < idx_end_categorical]
-                    numeric_idx = feat[(feat >= idx_end_categorical) & (feat != response_idx)]
-                    datalist = [group.iloc[:,  categorical_idx], group.iloc[:,  numeric_idx]]
+                    date_idx = feat[(feat >= idx_end_categorical) & (feat < idx_end_date)]
+                    numeric_idx = feat[(feat >= idx_end_date) & (feat != response_idx)]
+                    datadict = {'categorical': group.iloc[:,  categorical_idx],
+                                'date': group.iloc[:,  date_idx],
+                                'numeric': group.iloc[:,  numeric_idx]}
                     if split == 'train':
-                        datalist.append(group.iloc[:,  response_idx])
-                    gdic[cc].append(datalist)
+                        datadict['response'] = group.iloc[:,  response_idx]
+                    dump_to_csv_cluster(dirname, cc, split, datadict)
             i += 1
             print split, i
             if i == nchunks:
                 break
 
-        del whole_chunk
-        del chunk_categorical
-        del chunk_numeric
-        gc.collect()
-        for cc in gdic.keys():
-            l = gdic[cc]
-            full_categorical = pd.concat([x[0] for x in l])
-            full_numeric = pd.concat([x[1] for x in l])
-            full = (full_categorical, full_numeric)
-            if split == 'train':
-                full_response = pd.concat([x[2] for x in l])
-                full += (full_response, )
-            with open(os.path.join(dirname, 'group_%s_%i.pkl' % (split, cc)), 'w') as f:
-                cPickle.dump(full, f, protocol=-1)
-            print split, cc, len(full_numeric), len(full_categorical.columns), len(full_numeric.columns)
-            del gdic[cc]
-            gc.collect()
-        del(gdic)
-        gc.collect()
 
-
-def _make_stats_numeric(data):
-    return pd.DataFrame({
-        # 'max': data.max(axis=0),
-        # 'min': data.min(axis=0),
-        # 'median': data.median(axis=0),
-        'presence': data.count(axis=0) / float(len(data)),
-        'mean': data.mean(axis=0),
-        'std': data.std(axis=0)})
-
-def _make_stats_categorical(data):
-    return pd.DataFrame({
-        # 'max': data.max(axis=0),
-        # 'min': data.min(axis=0),
-        # 'median': data.median(axis=0),
-        'presence': data.count(axis=0) / float(len(data)),
-        'unique': data.apply(lambda x: len(x.unique()) - int(x.isnull().values.any()))})
+def _make_stats(key, data):
+    if key == 'numeric':
+        return pd.DataFrame({
+            # 'max': data.max(axis=0),
+            # 'min': data.min(axis=0),
+            # 'median': data.median(axis=0),
+            'presence': data.count(axis=0) / float(len(data)),
+            'mean': data.mean(axis=0),
+            'std': data.std(axis=0)})
+    if key == 'date':
+        return pd.DataFrame({
+            # 'max': data.max(axis=0),
+            # 'min': data.min(axis=0),
+            # 'median': data.median(axis=0),
+            'presence': data.count(axis=0) / float(len(data)),
+            'mean': data.mean(axis=0),
+            'std': data.std(axis=0)})
+    if key == 'categorical':
+        return pd.DataFrame({
+            # 'max': data.max(axis=0),
+            # 'min': data.min(axis=0),
+            # 'median': data.median(axis=0),
+            'presence': data.count(axis=0) / float(len(data)),
+            'unique': data.apply(lambda x: len(x.unique()) - int(x.isnull().values.any()))})
+    if key == 'response':
+        return pd.DataFrame({
+            'mean': data.mean(axis=0)})
+    raise Exception('Stats of what? Key %s not recognized' % (key, ))
 
 
 def _matthews_correlation(truth, x):
@@ -618,162 +699,221 @@ def _matthews_correlation(truth, x):
     return score, TP, TN, FP, FN
 
 
-def _predict_cluster(train_categorical, train_numeric, train_response, test_categorical, test_numeric,
-                     other_positives_categorical, other_positives_numeric, remove_absent=True, remove_invariant=True):
-    categorical_stats = _make_stats_categorical(train_categorical)
-    numeric_stats = _make_stats_numeric(train_numeric)
-    # print categorical_stats
-    # print numeric_stats
-    # print "numeric:", len(train_numeric.columns), "categorical:", len(train_categorical.columns)
+def get_xgb_clf():
+    params = {}
+    params['objective'] = "binary:logistic"
+    params['learning_rate'] = 0.05
+    params['max_depth'] = 10
+    params['n_estimators'] = 500
+    # params['colsample_bytree'] = 0.82
+    params['min_child_weight'] = 3
+    params['base_score'] = 0.005
+    params['silent'] = True
+    clf = xgboost.XGBClassifier(**params)
+    return clf
+
+
+def _predict_cluster(train_dict, test_dict, other_positives_dict,
+                     remove_absent=True, remove_invariant=True):
+    '''
+    :param train_dict: with keys 'categorical', 'date', 'numeric' and 'response', each a frame
+    :param test_dict: with keys 'categorical', 'date', and 'numeric', each a frame
+    :param other_positives_dict: with keys 'categorical', 'date', and 'numeric', each a frame
+    '''
+    stats = {k: _make_stats(k, v) for k, v in train_dict.iteritems()}
+    # print stats['categorical']
+    # print stats['date']
+    # print stats['numeric']
+    # print stats['response']
+    # print "numeric:", len(train_dict['numeric'].columns), "date:", len(train_dict['date'].columns), "categorical:", len(train_dict['categorical'].columns)
     if remove_absent:
-        present_categorical = (categorical_stats['presence'] > 0.001)
-        present_numeric = numeric_stats['presence'] > 0.50
-        train_categorical = train_categorical.loc[:, present_categorical]
-        train_numeric = train_numeric.loc[:, present_numeric]
-        test_categorical = test_categorical.loc[:, present_categorical]
-        test_numeric = test_numeric.loc[:, present_numeric]
-        other_positives_categorical = other_positives_categorical.loc[:, present_categorical]
-        other_positives_numeric = other_positives_numeric.loc[:, present_numeric]
-        categorical_stats = _make_stats_categorical(train_categorical)
-        numeric_stats = _make_stats_numeric(train_numeric)
-        # print "Removed absents:"
-        # print categorical_stats
-        # print numeric_stats
+        present_dict = {k: stats[k]['presence'] > thr for k, thr in
+                        [('categorical', 0.001), ('date', 0.50), ('numeric', 0.50)]}
+        for k in present_dict.keys():
+            train_dict[k] = train_dict[k].loc[:, present_dict[k]]
+            test_dict[k] = test_dict[k].loc[:, present_dict[k]]
+            other_positives_dict[k] = other_positives_dict[k].loc[:, present_dict[k]]
+            stats[k] = _make_stats(k, train_dict[k])
+            # print "Removed absents:"
+            # print stats['categorical']
+            # print stats['date']
+            # print stats['numeric']
+            # print stats['response']
 
-    # print "After absents numeric:", len(train_numeric.columns), "categorical:", len(train_categorical.columns)
-    # Always remove numeric features that have no variation in the training set
-    variant_numeric = (numeric_stats['std'] > 0)
-    train_numeric = train_numeric.loc[:, variant_numeric]
-    test_numeric = test_numeric.loc[:, variant_numeric]
-    other_positives_numeric = other_positives_numeric.loc[:, variant_numeric]
-    numeric_stats = _make_stats_numeric(train_numeric)
+    # print "After absents numeric:", len(train_dict['numeric'].columns), "date:", len(train_dict['date'].columns), "categorical:", len(train_dict['categorical'].columns)
+    # Always remove numeric and date features that have no variation in the training set
+    # Categorical gets special conditions
+    variant_conditions = [('numeric', 'std', 0.), ('date', 'std', 0.)]
     if remove_invariant:
-        variant_categorical = (categorical_stats['unique'] > 2)
-        train_categorical = train_categorical.loc[:, variant_categorical]
-        test_categorical = test_categorical.loc[:, variant_categorical]
-        other_positives_categorical = other_positives_categorical.loc[:, variant_categorical]
-        categorical_stats = _make_stats_categorical(train_categorical)
-        # print "Removed invariant:"
-        # print categorical_stats
-        # print numeric_stats
+        variant_conditions.append(('categorical', 'unique', 2))
+    for k, stat, thr in variant_conditions:
+        variant = (stats[k][stat] > thr)
+        train_dict[k] = train_dict[k].loc[:, variant]
+        test_dict[k] = test_dict[k].loc[:, variant]
+        other_positives_dict[k] = other_positives_dict[k].loc[:, variant]
+        stats[k] = _make_stats(k, train_dict[k])
+    # print "Removed invariant:"
+    # print stats['categorical']
+    # print stats['date']
+    # print stats['numeric']
 
-    # print "After invariants numeric:", len(train_numeric.columns), "categorical:", len(train_categorical.columns)
+    # print "After invariants numeric:", len(train_dict['numeric'].columns), "date:", len(train_dict['date'].columns), "categorical:", len(train_dict['categorical'].columns)
     # Time to select meaningful positives and join them to the training set
-    categorical_informative_features = other_positives_categorical.count(axis=1)
-    numeric_informative_features = other_positives_numeric.count(axis=1)
-    informative_positives = (categorical_informative_features >= 0.1 * categorical_stats['presence'].sum()) &\
-                            (numeric_informative_features > 0.8 * numeric_stats['presence'].sum())
-    other_positives_categorical = other_positives_categorical[informative_positives]
-    other_positives_numeric = other_positives_numeric[informative_positives]
-    train_categorical = pd.concat((train_categorical, other_positives_categorical))
-    train_numeric = pd.concat((train_numeric, other_positives_numeric))
-    train_response = pd.concat((train_response, pd.Series(np.ones(len(other_positives_categorical)),
-                                                          index=other_positives_categorical.index.values, name='Response')))
-    train_present = (train_categorical.count(axis=1) + train_numeric.count(axis=1)) / (len(train_categorical.columns) + len(train_numeric.columns))
+    informations = [('categorical', 0.1), ('date', 0.5), ('numeric', 0.8)]
+    informative_positives_by_type = [other_positives_dict[k].count(axis=1) >= thr * stats[k]['presence'].sum()
+                                     for k, thr in informations]
+    informative_positives = pd.concat(informative_positives_by_type, axis=1).all(axis=1)
+    for k in ['categorical', 'date', 'numeric']:
+        other_positives_dict[k] = other_positives_dict[k][informative_positives]
+        train_dict[k] = pd.concat((train_dict[k], other_positives_dict[k]))
+    train_dict['response'] = pd.concat((train_dict['response'], pd.DataFrame({'Response':np.ones(len(other_positives_dict['categorical'])),
+                                                                              'Id': other_positives_dict['categorical'].index.values}).set_index('Id')))
+
+    # use diffs of times
+    # train_dict['date'] = train_dict['date'].sub(train_dict['date'].median(axis=1).fillna(0), axis=0)
+    # test_dict['date'] = test_dict['date'].sub(test_dict['date'].median(axis=1).fillna(0), axis=0)
+    train_date_median = train_dict['date'].median(axis=1)
+    test_date_median = test_dict['date'].median(axis=1)
+    train_dict['date'] = train_dict['date'].diff(axis=1)
+    test_dict['date'] = test_dict['date'].diff(axis=1)
+    train_dict['date'].iloc[:, 0] = train_date_median  # replace the first column of diff, which is all nans, with the median
+    test_dict['date'].iloc[:, 0] = test_date_median  # replace the first column of diff, which is all nans, with the median
 
     # Notice now we use both training and testing to get the mean to replace nans
-    numeric_stats = _make_stats_numeric(pd.concat((train_numeric, test_numeric), axis=0))
-    # Fill numeric nans with the training + testing mean
-    train_numeric = train_numeric.fillna(numeric_stats['mean'], axis=0)
-    test_numeric = test_numeric.fillna(numeric_stats['mean'], axis=0)
+    for k in ['date', 'numeric']:
+        stats[k] = _make_stats(k, pd.concat((train_dict[k], test_dict[k]), axis=0))
+        # Fill numeric and date nans with the training + testing mean
+        train_dict[k] = train_dict[k].fillna(stats[k]['mean'], axis=0)
+        test_dict[k] = test_dict[k].fillna(stats[k]['mean'], axis=0)
 
     # Transform categorical data into consecutive numbers
-    all_categorical = pd.concat((train_categorical, test_categorical), axis=0)
+    all_categorical = pd.concat((train_dict['categorical'], test_dict['categorical']), axis=0)
     all_categorical = all_categorical.rank(axis=0, method='dense', na_option='bottom')
-    train_ranked_categorical = all_categorical.iloc[:len(train_categorical)]
-    test_ranked_categorical = all_categorical.iloc[len(train_categorical):]
+    test_dict['categorical'] = all_categorical.iloc[len(train_dict['categorical']):]
+    train_dict['categorical'] = all_categorical.iloc[:len(train_dict['categorical'])]
 
-    # numeric_stats = _make_stats_numeric(train_numeric)
-    # categorical_stats = _make_stats_categorical(train_ranked_categorical_data)
+    # for k in train_dict.keys():
+    #     stats[k] = _make_stats(k, train_dict[k])
     # print "Filled nans:"
-    # print categorical_stats
-    # print numeric_stats
+    # print stats['categorical']
+    # print stats['date']
+    # print stats['numeric']
 
-    all_train_data = pd.concat((train_ranked_categorical, train_numeric), axis=1)
-    all_test_data = pd.concat((test_ranked_categorical, test_numeric), axis=1)
-    all_stats = _make_stats_numeric(pd.concat((all_train_data, all_test_data), axis=0))
+    all_train_data = pd.concat((train_dict[k] for k in ['categorical', 'date', 'numeric']), axis=1)
+    all_test_data = pd.concat((test_dict[k] for k in ['categorical', 'date', 'numeric']), axis=1)
+    all_stats = _make_stats('numeric', pd.concat((all_train_data, all_test_data), axis=0))
     all_train_data = (all_train_data - all_stats['mean']) / (1e-9 + all_stats['std'])
     all_test_data = (all_test_data - all_stats['mean']) / (1e-9 + all_stats['std'])
 
-    # all_stats = _make_stats_numeric(all_train_data)
+    positives = all_train_data[(train_dict['response'] == 1).values]
+    negatives = all_train_data[(train_dict['response'] == 0).values]
+    nn = NearestNeighbors(n_neighbors=40).fit(negatives)
+    d, nearest = nn.kneighbors(positives)
+    nearest = np.unique(nearest.ravel())
+    all_train_data = pd.concat((positives, negatives.iloc[nearest.ravel()]))
+    r = np.concatenate((np.ones(len(positives)), np.zeros(len(nearest.ravel()))))
+
+    resampled_response = r
+    train_resample = all_train_data
+    # pca, _ = pca_converter(train_resample, 1, 0.9)
+    # all_stats = _make_stats('numeric', all_train_data)
     # print "Normalized:"
     # print all_stats
 
-    positive_rate = np.mean(train_response)
-    weighted_positive_rate = np.sum(train_present * train_response) / np.sum(train_present * (1 - train_response))
-    sample_weights = train_present / weighted_positive_rate * train_response + train_present * (1 - train_response)
-    train_resample = pd.concat((all_train_data, train_response), axis=1).sample(frac=0.75, replace=True, weights=sample_weights)
+    # r = train_dict['response'].values.ravel()
+    positive_rate = np.mean(r)
+    train_present = (all_train_data.count(axis=1)) / float(len(all_train_data.columns))
+
+    # oversampler = SMOTE()
+    # train_resample, resampled_response = oversampler.fit_sample(all_train_data.values, train_dict['response'].values.ravel())
+    # train_resample = pd.DataFrame(train_resample, columns=all_train_data.columns)
+    weighted_positive_rate = np.sum(train_present * r) / np.sum(train_present * (1 - r))
+    sample_weights = train_present / weighted_positive_rate * r + train_present * (1 - r)
+    train_resample = pd.concat((all_train_data, pd.DataFrame({'Response': r, 'Id': all_train_data.index.values}).set_index('Id')), axis=1).sample(frac=1.0, replace=True, weights=sample_weights)
     resampled_response = train_resample['Response']
     train_resample = train_resample.drop('Response', axis=1)
-    # print("Added %i other positives, resampled positives from %.3f to %.3f positives" % (len(other_positives_categorical), positive_rate, resampled_response.mean()))
+    print("Added %i other positives, resampled positives from %.3f to %.3f positives; total samples from %i to %i, %i features" %
+          (len(other_positives_dict['categorical']), positive_rate, resampled_response.mean(),
+           len(all_train_data), len(train_resample), len(train_resample.columns)))
 
     parts = []
     results = []
     for l in ['L']:
-        features = [s for s in train_resample.columns.values if s[:1] == l]
+        features = [s for s in train_resample.columns.values if True]#s[:1] == l]
         if len(features) > 0:
             parts.append(features)
-    print "part lengths:", [len(s) for s in parts]
+    # print "part lengths:", [len(s) for s in parts]
     for p in parts:
         # clf = SVC(C=0.05, kernel='linear')
         # clf = LinearSVC(C=0.01, penalty='l1', dual=False, class_weight='balanced')
-        clf = RandomForestClassifier(n_estimators=250, criterion='gini', max_depth=20, class_weight='balanced')
-        # clf = GradientBoostingClassifier(n_estimators=300, learning_rate=1.0, max_depth=8)
-        clf2 = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=10, class_weight='balanced'), n_estimators=50)
+        clf = RandomForestClassifier(n_estimators=500, criterion='gini', max_depth=12,
+                                     max_features=min(len(train_resample.columns), int(4 * np.sqrt(len(train_resample.columns)))),
+                                     class_weight='balanced')
+        the_train_data = train_resample.loc[:, p]
+        the_test_data = all_test_data.loc[:, p]
+        # the_train_data = pca(the_train_data)
+        # the_test_data = pca(the_test_data)
+        # clf = Convnet(data_length=the_data.shape[1], n_channels=1, n_outputs=2,
+        #               kernel_defs=[(1, 4, 1)], fc_sizes=[16],
+        #               batch_size=128, n_passes=60, dropout_keep_prob=0.5)
+        clf = get_xgb_clf()
+        # clf = GradientBoostingClassifier(n_estimators=300, learning_rate=1., min_samples_leaf=5, max_depth=10)
+        # clf2 = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=10, class_weight='balanced'), n_estimators=50)
         # clf2 = KNeighborsClassifier(n_neighbors=5, weights='distance')
-        clf2 = RadiusNeighborsClassifier()
-        clf.fit(train_resample.loc[:, p], resampled_response)
-        fi = clf.feature_importances_
-        clf2.fit(train_resample.loc[:, p] * fi, resampled_response)
-        results.append(clf2.predict(all_test_data.loc[:, p] * fi))
+        # clf2 = RadiusNeighborsClassifier()
+        clf.fit(the_train_data, resampled_response)
+        # fi = clf.feature_importances_
+        # clf2.fit(train_resample.loc[:, p] * fi, resampled_response)
+        # results.append(clf2.predict(all_test_data.loc[:, p] * fi))
+        results.append(clf.predict(the_test_data))
     result = np.sum(np.vstack(results), axis=0) > 0
-    return result
+    return result.astype(np.float)
 
 
 def main():
-    dirname = 'clustereddata_300_best50'
+    dirname = 'clustereddata_300_csv'
+    all_positives = {}
     with open('positives.pkl', 'r') as f:
-        all_positives_categorical, all_positives_numeric = cPickle.load(f)
+        all_positives['categorical'], all_positives['date'], all_positives['numeric'] = cPickle.load(f)
 
     all_files = os.listdir(dirname)
-    all_train_files = [s for s in all_files if 'train' in s]
-    sizes = [os.path.getsize(os.path.join(dirname, s)) for s in all_train_files]
+    train_files = {}
+    test_files = {}
+    for k in ['categorical', 'date', 'numeric', 'response']:
+        train_files[k] = [s for s in all_files if k in s and 'train' in s]
+    for k in ['categorical', 'date', 'numeric']:
+        test_files[k] = [s for s in all_files if k in s and 'test' in s]
+    sizes = [os.path.getsize(os.path.join(dirname, s)) for s in train_files['numeric']]
     all_idx = np.argsort(sizes)[::-1]  # biggest first
     all_TP = all_TN = all_FP = all_FN = 0
     tot_records = 0
-    for idx in all_idx[40:45]:
-        train_file = os.path.join(dirname, all_train_files[idx])
-        test_file = train_file.replace('train', 'test')
-        with open(train_file, 'r') as f:
-            train_categorical, train_numeric, train_response = cPickle.load(f)
-        tot_records += len(train_categorical)
-        print("Processing %s, size=%i, n_records=%i" % (all_train_files[idx], sizes[idx], len(train_categorical)))
-        others = ~all_positives_categorical.index.isin(train_categorical.index)
-        other_positives_categorical = all_positives_categorical.loc[others]
-        other_positives_numeric = all_positives_numeric.loc[others]
-        other_positives_categorical = other_positives_categorical[train_categorical.columns]
-        other_positives_numeric = other_positives_numeric[train_numeric.columns]
-        # print("Kept %i extra positives out of %i" % (len(other_positives_categorical), len(all_positives_categorical)))
-        # with open(test_file, 'r') as f:
-        #     test_categorical, test_numeric = cPickle.load(f)
+    for idx in all_idx[7:10]:
+        cc = train_files['numeric'][idx][-10:-4]
+        train_dict = {}
+        test_dict = {}
+        for k in ['categorical', 'date', 'numeric', 'response']:
+            train_file = os.path.join(dirname, [s for s in train_files[k] if cc in s][0])
+            train_dict[k] = pd.read_csv(train_file, sep=',', header=0).set_index('Id')
+        for k in ['categorical', 'date', 'numeric']:
+            test_file = os.path.join(dirname, [s for s in test_files[k] if cc in s][0])
+            test_dict[k] = pd.read_csv(test_file, sep=',', header=0).set_index('Id')
+        tot_records += len(train_dict['categorical'])
+        print("Processing %s, size=%i, n_records=%i" % (cc, sizes[idx], len(train_dict['categorical'])))
+        others = ~all_positives['categorical'].index.isin(train_dict['categorical'].index)
+        other_positives_dict = {k: all_positives[k].loc[others, train_dict[k].columns] for k in all_positives.keys()}
+        # print("Kept %i extra positives out of %i" % (len(other_positives['categorical']), len(all_positives['categorical'])))
 
-        kf = KFold(len(train_response), n_folds=5)
+        kf = KFold(len(train_dict['response']), n_folds=5)
         remove_absent = True
         remove_invariant = True
         pd.options.display.float_format = '{:,.2f}'.format
         for train, test in kf:
-            train_categorical_chunk = train_categorical.iloc[train]
-            train_numeric_chunk = train_numeric.iloc[train]
-            train_response_chunk = train_response.iloc[train]
-            validation_categorical = train_categorical.iloc[test]
-            validation_numeric = train_numeric.iloc[test]
-            validation_response = train_response.iloc[test]
-            response = _predict_cluster(train_categorical_chunk, train_numeric_chunk, train_response_chunk,
-                                        validation_categorical, validation_numeric,
-                                        other_positives_categorical, other_positives_numeric,
+            train_chunk_dict = {k: train_dict[k].iloc[train] for k in train_dict.keys()}
+            validation_dict = {k: train_dict[k].iloc[test] for k in train_dict.keys()}
+            response = _predict_cluster(train_chunk_dict, validation_dict, other_positives_dict,
                                         remove_absent=remove_absent, remove_invariant=remove_invariant)
-            score, TP, TN, FP, FN = _matthews_correlation(validation_response, response)
-            print "Score: %.3f, positives %i, true %i, false %i" % (score, np.sum(validation_response), TP, FP)
+            score, TP, TN, FP, FN = _matthews_correlation(validation_dict['response'].values.ravel(), response)
+            print "Score: %.3f, positives %i, true %i, false %i" % (score, np.sum(validation_dict['response']), TP, FP)
             all_TP += TP
             all_TN += TN
             all_FP += FP
@@ -786,9 +926,12 @@ def main():
 
 
 if __name__ == "__main__":
-    # cluster_maxisets('maxisets_600.pkl', 600)
-    # distribute_data_in_clusters('maxisets_600.pkl')
-
+    # save_all_positives('kk.pkl')
+    # compute_feature_sets('new_sets.pkl')
+    # cluster_maxisets('maxisets_300.pkl', 300)
+    # distribute_data_in_clusters('maxisets_300.pkl')
+    # clean_categorical()
+    # examine_date()
     main()
     # import cProfile, pstats
     # profiler = cProfile.Profile()
