@@ -760,7 +760,14 @@ def load_maxisets(filename):
     return maxisets, train_set_idx, test_set_idx
 
 
-def cluster_maxisets(filename, n_clusters, exclude_file=None):
+def cluster_maxisets(filename, n_clusters, exclude_files=None):
+    '''
+    :param filename:
+    :param n_clusters:
+    :param exclude_files: if not None, 2-tuple (train_excluded_file, test_excluded_file); they
+        should each have at least one column headed 'Id' with the ids to ignore in training and testing,
+        respectively
+    '''
     unique_feature_sets, train_set_idx, test_set_idx = load_feature_sets('sets.pkl')
     n_sets = None
     if n_sets is not None:
@@ -768,11 +775,14 @@ def cluster_maxisets(filename, n_clusters, exclude_file=None):
         train_set_idx = train_set_idx[train_set_idx['feature_set_idx'] < n_sets]
         test_set_idx = test_set_idx[test_set_idx['feature_set_idx'] < n_sets]
 
-    if exclude_file is not None:
-        excluded = pd.read_csv(exclude_file, header=0, sep=',').set_index('Id')
+    if exclude_files is not None:
+        old_ntrain = len(train_set_idx)
         old_ntest = len(test_set_idx)
-        test_set_idx = test_set_idx.drop(excluded.index)
-        print "Dropped from %i to %i test records" % (old_ntest, len(test_set_idx))
+        excluded_train = pd.read_csv(exclude_files[0], header=0, sep=',', usecols=['Id'])
+        train_set_idx = train_set_idx.drop(excluded_train['Id'])
+        excluded_test = pd.read_csv(exclude_files[1], header=0, sep=',', usecols=['Id'])
+        test_set_idx = test_set_idx.drop(excluded_test['Id'])
+        print "Dropped from %i to %i train and %i to %i test records" % (old_ntrain, len(train_set_idx), old_ntest, len(test_set_idx))
 
     best = (-1, -1, -1)
     for _ in range(100):
@@ -992,12 +1002,12 @@ def get_xgb_params(light_mode):
     params['lambda'] = 1.0  # L2 regularization; only meaningful if booster is 'gblinear'
     params['alpha'] = 1.0  # L1 regularization; only meaningful if booster is 'gblinear'
     params['objective'] = "binary:logistic"
-    params['eta'] = 0.02 if light_mode else 0.02
+    params['eta'] = 0.02 if light_mode else 0.002
     params['learning_rate'] = params['eta']  # docs are so bad I dont know if it is eta or learning_rate or either
     params['gamma'] = 1.
     params['max_depth'] = 15
-    params['colsample_bytree'] = 0.2 if light_mode else 0.4
-    params['colsample_bylevel'] = 0.2 if light_mode else 0.4
+    params['colsample_bytree'] = 0.7 if light_mode else 0.7
+    params['colsample_bylevel'] = 0.7 if light_mode else 0.7
     params['min_child_weight'] = 0.1
     params['base_score'] = 0.005
     params['silent'] = True
@@ -1144,9 +1154,9 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
     #              'L3_S33_F3855', 'L1_S24_F1604',
     #              'L3_S29_F3407', 'L3_S33_F3865', 'L3_S36_F3920', 'L3_S36_F3859',
     #              'L3_S38_F3952', 'L1_S24_F1723']
-    # the_present_feats = list(set(train_resample.columns).intersection(the_feats))
+    # the_present_feats = list(set(the_train_data.columns).intersection(the_feats))
     # the_train_data = the_train_data[the_present_feats]
-    # the_test_data = all_test_data[the_present_feats]
+    # the_test_data = the_test_data[the_present_feats]
     # print "Reduced to %i cols" % len(the_train_data.columns)
     # clf = get_xgb_clf()
 
@@ -1163,7 +1173,7 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
     params = get_xgb_params(light_mode=light_mode)
     clf = xgboost.train(params, the_train_data,
                         # evals=[(the_eval_data, 'eval')], early_stopping_rounds=40, feval=mcc_eval, maximize=True, verbose_eval=False, evals_result=evals_result,
-                        num_boost_round=50 if light_mode else 50)
+                        num_boost_round=50 if light_mode else 250)
     # ntree_limit = clf.best_iteration + 1
     # print "Best iteration:", ntree_limit, evals_result
     prob = clf.predict(the_test_data)#, ntree_limit=ntree_limit)
@@ -1208,15 +1218,17 @@ def  cross_eval(train_dict, other_positives_dict, light_mode, verbose):
     return score, best_p, (TP, TN, FP, FN)
 
 
-def append_results(results_path, results):
-    exists = os.path.exists(results_path)
-    with open(results_path, 'a') as f:
-        results.to_csv(f, sep=',', header=not exists, na_rep='')
+def append_results(filepath, frame, index):
+    exists = os.path.exists(filepath)
+    with open(filepath, 'a') as f:
+        frame.to_csv(f, sep=',', header=not exists, na_rep='', index=index)
 
 
 def main():
     dirname = 'clustereddata_300_clean'
-    results_path = os.path.join(dirname, 'results_' + time.strftime('%y%m%d_%H%M%S', time.localtime()) + '.csv')
+    timestr = time.strftime('%y%m%d_%H%M%S', time.localtime())
+    results_path = os.path.join(dirname, 'results_' + timestr + '.csv')
+    exclude_path = os.path.join(dirname, 'excluded_' + timestr + '.csv')
     all_positives = {}
     with open('positives.pkl', 'r') as f:
         all_positives['categorical'], all_positives['date'], all_positives['numeric'] = cPickle.load(f)
@@ -1263,8 +1275,9 @@ def main():
                 print "This is the real thing, score %.3f, best_p=%.3f, doing the test data..." % (score, best_p)
                 prob = _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode=False,
                                         remove_absent=True, remove_invariant=True)
-                append_results(results_path, pd.DataFrame(data={'Response': (prob > best_p).astype(np.int)}, index=test_dict['numeric'].index))
-                print "Saved test data for cluster %s!" % (cc, )
+                append_results(results_path, pd.DataFrame(data={'Response': (prob > best_p).astype(np.int)}, index=test_dict['numeric'].index), index=True)
+                append_results(exclude_path, pd.Series(train_dict['numeric'].index), index=False)
+                print "Saved test and excluded data for cluster %s!" % (cc, )
 
         all_TP += TP
         all_TN += TN
@@ -1283,8 +1296,10 @@ if __name__ == "__main__":
     # make_magic_features()
     # save_all_positives('kk.pkl')
     # compute_feature_sets('new_sets.pkl')
-    cluster_maxisets('maxisets_200_round2.pkl', 300, exclude_file=os.path.join('clustereddata_300_clean/results_161023_170825.csv'))
-    # distribute_data_in_clusters('maxisets_300.pkl')
+    # cluster_maxisets('maxisets_200_round2.pkl', 300, exclude_files=(os.path.join('clustereddata_300_clean/excluded_161024_152759.csv'),
+    #                                                                 os.path.join('clustereddata_300_clean/results_161024_152759.csv')))
+
+    # distribute_data_in_clusters('maxisets_200_round2.pkl')
 
     # clean_categorical()
     # examine_date()
@@ -1294,7 +1309,7 @@ if __name__ == "__main__":
     # clean_numeric_by_hash()
     # clean_date_by_hash()
 
-    # main()
+    main()
     # import cProfile, pstats
     # profiler = cProfile.Profile()
     # try:
