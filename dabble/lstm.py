@@ -4,23 +4,9 @@ import tensorflow as tf
 import zipfile
 import pickle
 import stat
-from six.moves.urllib.request import urlretrieve
 import time
 import cv2
 import sys
-
-
-def maybe_download(url, filename, expected_bytes):
-    """Download a file if not present, and make sure it's the right size."""
-    if not os.path.exists(filename):
-        filename, _ = urlretrieve(url + filename, filename)
-    statinfo = os.stat(filename)
-    if statinfo.st_size == expected_bytes:
-        print('Found and verified %s' % filename)
-    else:
-        print(statinfo.st_size)
-        raise Exception('Failed to verify ' + filename + '. Can you get to it with a browser?')
-    return filename
 
 
 def read_data(filename):
@@ -162,18 +148,18 @@ def display_samples(samples, encoder):
     cv2.waitKey(1)
 
 
-def text_generator(session, things, encoder, seed, temperature, depth=1, n_samples=1):
-    eval_feed_dict = {v: np.zeros(v._shape) for v in [things['sampler_combined_start']]}
-    eval_feed_dict[things['dropout_keep_prob']] = 1.0
-    run_list = [things['sampler_combined_end'], things['sampler_prediction']]
+def text_generator(session, model, encoder, seed, temperature, depth=1, n_samples=1):
+    eval_feed_dict = {v: np.zeros(v._shape) for v in [model['sampler_combined_start']]}
+    eval_feed_dict[model['dropout_keep_prob']] = 1.0
+    run_list = [model['sampler_combined_end'], model['sampler_prediction']]
     for s in seed:
         feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
         feed[0, s] = 1.
         yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
-        eval_feed_dict[things['sampler_input']] = feed
-        eval_feed_dict[things['sampler_combined_start']], predictions = session.run(run_list, feed_dict=eval_feed_dict)
+        eval_feed_dict[model['sampler_input']] = feed
+        eval_feed_dict[model['sampler_combined_start']], predictions = session.run(run_list, feed_dict=eval_feed_dict)
 
-    samples = [((), (0., ), predictions, eval_feed_dict[things['sampler_combined_start']])]
+    samples = [((), (0., ), predictions, eval_feed_dict[model['sampler_combined_start']])]
     current_depth = 0
     while True:
         all_p = np.hstack([np.sum(c[1]) + c[2] for c in samples])
@@ -183,7 +169,7 @@ def text_generator(session, things, encoder, seed, temperature, depth=1, n_sampl
         if (current_depth >= depth):  # produce the best character
             feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
             first_selected_sample = first_selected / encoder.vocabulary_size
-            c = samples[first_selected_sample][0][0]
+            c = int(samples[int(first_selected_sample)][0][0])
             feed[0, c] = 1.  # the first character of the character list (index 0) of the first chosen sample
             yield characters(feed, encoder).T[0].tostring().decode('mac-roman')
             samples = [s for s in samples if s[0][0] == c]  # we have to eliminate all samples that don't start with the chosen one
@@ -204,11 +190,11 @@ def text_generator(session, things, encoder, seed, temperature, depth=1, n_sampl
         selected_characters = selected % encoder.vocabulary_size
         new_samples = []
         for s, c in zip(selected_samples, selected_characters):
-            current_sample = samples[s]
-            eval_feed_dict[things['sampler_combined_start']] = current_sample[3]
+            current_sample = samples[int(s)]
+            eval_feed_dict[model['sampler_combined_start']] = current_sample[3]
             feed = np.zeros((1, encoder.vocabulary_size), dtype=np.float32)
             feed[0, c] = 1.
-            eval_feed_dict[things['sampler_input']] = feed
+            eval_feed_dict[model['sampler_input']] = feed
             new_state, predictions = session.run(run_list, feed_dict=eval_feed_dict)
             if current_depth >= depth:
                 ns = (current_sample[0][1:] + (c,), current_sample[1][1:] + (np.log(current_sample[2][0, c]), ),
@@ -224,13 +210,13 @@ def text_generator(session, things, encoder, seed, temperature, depth=1, n_sampl
 
 def load_model(folder):
     with open(os.path.join(folder, 'model.pickle'), 'r') as f:
-        model_dict = pickle.load(f)
-    things = model(vocabulary_size=model_dict['encoder'].vocabulary_size,
-                   num_unrollings=model_dict['num_unrollings'],
-                   unroll_shift=model_dict['unroll_shift'],
-                   batch_size=model_dict['batch_size'],
-                   n_nodes=model_dict['n_nodes'])
-    return things, model_dict
+        initialization_dict = pickle.load(f)
+    model = make_network(vocabulary_size=initialization_dict['encoder'].vocabulary_size,
+                          num_unrollings=initialization_dict['num_unrollings'],
+                          unroll_shift=initialization_dict['unroll_shift'],
+                          batch_size=initialization_dict['batch_size'],
+                          n_nodes=initialization_dict['n_nodes'])
+    return model, initialization_dict
 
 
 def lstm_layer(inputs, sampler_input, sampler_output, sampler_state, prev_n_nodes, n_nodes, batch_size, dropout_keep_prob):
@@ -274,44 +260,44 @@ def lstm_layer(inputs, sampler_input, sampler_output, sampler_state, prev_n_node
     return outputs, states, saved_output, saved_state, sampler_output, sampler_state
 
 
-def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
+def make_network(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
     assert 0 <= unroll_shift < num_unrollings
     n_layers = len(n_nodes)
-    things = {}
-    things['graph'] = tf.Graph()
-    with things['graph'].as_default():
+    model = {}
+    model['graph'] = tf.Graph()
+    with model['graph'].as_default():
         # Input data.
-        things['train_data'] = list()
+        model['train_data'] = list()
         for j in range(num_unrollings + 1):
-            things['train_data'].append(
+            model['train_data'].append(
               tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size], name='train_data_%i' % j))
-        train_inputs = things['train_data'][:num_unrollings]
-        train_labels = things['train_data'][1:]  # labels are inputs shifted by one time step.
-        things['sampler_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sampler_input')
-        things['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
+        train_inputs = model['train_data'][:num_unrollings]
+        train_labels = model['train_data'][1:]  # labels are inputs shifted by one time step.
+        model['sampler_input'] = tf.placeholder(tf.float32, shape=[1, vocabulary_size], name='sampler_input')
+        model['dropout_keep_prob'] = tf.placeholder("float", name="dropout_keep_prob")
 
         all_n_nodes = [vocabulary_size] + n_nodes + [vocabulary_size]
         assignments = []
         outputs = train_inputs
-        sampler_input = things['sampler_input']
+        sampler_input = model['sampler_input']
         sampler_combined_lengths = np.kron(n_nodes, [1, 1])  # output, state, output, state... for each sampler layer
         sampler_slices = np.hstack(([0], np.cumsum(sampler_combined_lengths)))
-        things['sampler_combined_start'] = tf.zeros(shape=[1, sampler_slices[-1]], dtype=tf.float32)
+        model['sampler_combined_start'] = tf.zeros(shape=[1, sampler_slices[-1]], dtype=tf.float32)
         sampler_combined_list = []
         for j in range(1, n_layers + 1):
             with tf.variable_scope("lstm_%i" % j):
-                sampler_output = tf.slice(things['sampler_combined_start'], [0, sampler_slices[2 * (j - 1)]], [1, sampler_combined_lengths[2 * (j - 1)]])
-                sampler_state = tf.slice(things['sampler_combined_start'], [0, sampler_slices[2 * (j - 1) + 1]], [1, sampler_combined_lengths[2 * (j - 1) + 1]])
+                sampler_output = tf.slice(model['sampler_combined_start'], [0, sampler_slices[2 * (j - 1)]], [1, sampler_combined_lengths[2 * (j - 1)]])
+                sampler_state = tf.slice(model['sampler_combined_start'], [0, sampler_slices[2 * (j - 1) + 1]], [1, sampler_combined_lengths[2 * (j - 1) + 1]])
                 outputs, states, saved_output, saved_state, sampler_output, sampler_state =\
                     lstm_layer(outputs, sampler_input, sampler_output, sampler_state,
                                all_n_nodes[j-1], all_n_nodes[j],
-                               batch_size, things['dropout_keep_prob'])
+                               batch_size, model['dropout_keep_prob'])
                 sampler_input = sampler_output
                 sampler_combined_list += [sampler_output, sampler_state]
             assignments.append(saved_output.assign(outputs[unroll_shift]))
             assignments.append(saved_state.assign(states[unroll_shift]))
 
-        things['sampler_combined_end'] = tf.concat(1, sampler_combined_list)
+        model['sampler_combined_end'] = tf.concat(1, sampler_combined_list)
         next_stddev = 0.01 / np.sqrt(all_n_nodes[j + 1])
         with tf.variable_scope("lstm_%i" % n_layers):
             # Classifier weights and biases
@@ -320,33 +306,30 @@ def model(vocabulary_size, num_unrollings, unroll_shift, batch_size, n_nodes):
         all_labels = tf.concat(0, train_labels)
         with tf.control_dependencies(assignments):  # we have a circular graph and this makes sure it "ends" in the loss?
             all_logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b, name="logits")
-            things['loss'] = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
+            model['loss'] = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(all_logits, all_labels))
         sampler_logits = tf.nn.xw_plus_b(sampler_output, w, b, name="sampler_logits")
-        things['sampler_prediction'] = tf.nn.softmax(sampler_logits)
+        model['sampler_prediction'] = tf.nn.softmax(sampler_logits)
 
         # Optimizer.
         global_step = tf.Variable(0)
-        things['learning_rate'] = tf.train.exponential_decay(
+        model['learning_rate'] = tf.train.exponential_decay(
             0.01, global_step, 6000, 0.5, staircase=True)
-        optimizer = tf.train.RMSPropOptimizer(things['learning_rate'], decay=0.9)
-#        optimizer = tf.train.AdamOptimizer(things['learning_rate'])
-        gradients, v = zip(*optimizer.compute_gradients(things['loss'],
+        optimizer = tf.train.RMSPropOptimizer(model['learning_rate'], decay=0.9)
+#        optimizer = tf.train.AdamOptimizer(model['learning_rate'])
+        gradients, v = zip(*optimizer.compute_gradients(model['loss'],
                                                         aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.)
-        things['optimizer'] = optimizer.apply_gradients(
+        model['optimizer'] = optimizer.apply_gradients(
             zip(gradients, v), global_step=global_step)
 
         # Predictions.
-        things['train_prediction'] = tf.nn.softmax(all_logits)
-        things['saver'] = tf.train.Saver()
+        model['train_prediction'] = tf.nn.softmax(all_logits)
+        model['saver'] = tf.train.Saver()
 
-    return things
+    return model
 
 
-def lstm_demo(text, model_folder=None, model_dict=None):
-#    url = 'http://mattmahoney.net/dc/'
-#    filename = maybe_download(url, 'text8.zip', 31344016)
-#    text = np.fromstring(read_data(filename), dtype=np.uint8)
+def lstm_demo(text, model_folder=None, initialization_dict=None):
     valid_size = 5000
     valid_text = text[:valid_size]
     train_text = text[valid_size:]
@@ -363,25 +346,25 @@ def lstm_demo(text, model_folder=None, model_dict=None):
 
     instance_filename = get_latest_instance(model_folder)
     if instance_filename is None:  # nothing to continue from
-        assert model_dict is not None, "Must provide model_dict for new training"
+        assert initialization_dict is not None, "Must provide initialization_dict for new training"
         with open(os.path.join(model_folder, 'model.pickle'), 'w') as f:
-            pickle.dump(model_dict, f)
+            pickle.dump(initialization_dict, f)
         start_iter = 0
     else:
-        assert model_dict is None, ("Loading model from folder %s, cannot use given model_dict" % model_folder)
-        things, model_dict = load_model(model_folder)
+        assert initialization_dict is None, ("Loading model from folder %s, cannot use given initialization_dict" % model_folder)
+        model, initialization_dict = load_model(model_folder)
         start_iter = int(instance_filename[-5:]) + 1
 
-    encoder = model_dict['encoder']
-    n_nodes = model_dict['n_nodes']
-    batch_size = model_dict['batch_size']
-    num_unrollings = model_dict['num_unrollings']
-    unroll_shift = model_dict['unroll_shift']
-    dropout_keep_prob = model_dict['dropout_keep_prob']
+    encoder = initialization_dict['encoder']
+    n_nodes = initialization_dict['n_nodes']
+    batch_size = initialization_dict['batch_size']
+    num_unrollings = initialization_dict['num_unrollings']
+    unroll_shift = initialization_dict['unroll_shift']
+    dropout_keep_prob = initialization_dict['dropout_keep_prob']
     with open(os.path.join(model_folder, 'model.pickle'), 'w') as f:
-        pickle.dump(model_dict, f)
-    things = model(vocabulary_size=encoder.vocabulary_size, num_unrollings=num_unrollings,
-                   batch_size=batch_size, unroll_shift=unroll_shift, n_nodes=n_nodes)
+        pickle.dump(initialization_dict, f)
+    model = make_network(vocabulary_size=encoder.vocabulary_size, num_unrollings=num_unrollings,
+                          batch_size=batch_size, unroll_shift=unroll_shift, n_nodes=n_nodes)
     print('Vocabulary size %d' % encoder.vocabulary_size)
     train_batches = batch_generator(train_text, batch_size, num_unrollings, encoder, unroll_shift)
     valid_batches = batch_generator(valid_text, 1, 1, encoder, 0)
@@ -394,15 +377,15 @@ def lstm_demo(text, model_folder=None, model_dict=None):
     num_steps = 100001
     summary_frequency = 100
 
-    with tf.Session(graph=things['graph']) as session:
-        summary = tf.scalar_summary("loss", things['loss'])
+    with tf.Session(graph=model['graph']) as session:
+        summary = tf.scalar_summary("loss", model['loss'])
         merged = tf.merge_all_summaries()
         writer = tf.train.SummaryWriter("/tmp/lstm_logs", session.graph_def)
         if instance_filename is None:  # initialize from scratch
             tf.initialize_all_variables().run()
             print('Initialized')
         else:  # restore from saved
-            things['saver'].restore(session, os.path.join(model_folder, instance_filename))
+            model['saver'].restore(session, os.path.join(model_folder, instance_filename))
             print('Restored to iteration %i' % (start_iter - 1))
         mean_loss = 0
         t0 = time.time()
@@ -410,11 +393,11 @@ def lstm_demo(text, model_folder=None, model_dict=None):
             batches = train_batches.next()
             feed_dict = dict()
             for i in range(num_unrollings + 1):
-                feed_dict[things['train_data'][i]] = batches[i]
-            feed_dict[things['dropout_keep_prob']] = dropout_keep_prob
+                feed_dict[model['train_data'][i]] = batches[i]
+            feed_dict[model['dropout_keep_prob']] = dropout_keep_prob
             _, l, predictions, lr, summary_str = session.run(
-                [things['optimizer'], things['loss'], things['train_prediction'],
-                 things['learning_rate'], merged], feed_dict=feed_dict)
+                [model['optimizer'], model['loss'], model['train_prediction'],
+                 model['learning_rate'], merged], feed_dict=feed_dict)
             mean_loss += l
             if step % summary_frequency == 0:
                 writer.add_summary(summary_str, step)
@@ -427,11 +410,11 @@ def lstm_demo(text, model_folder=None, model_dict=None):
                 labels = np.concatenate(list(batches)[1:])
                 print('Minibatch perplexity: %.2f' % float(np.exp(logprob(predictions, labels))))
                 if step % (summary_frequency * 10) == 0:
-                    things['saver'].save(session, os.path.join(model_folder, 'instance_%.5i' % step))
+                    model['saver'].save(session, os.path.join(model_folder, 'instance_%.5i' % step))
                     # Generate some samples.
                     for temperature in [1, 0.001]:
                         print('=' * 30 + ('temperature=%.2f' % temperature) + '=' * 30)
-                        generator = text_generator(session, things, encoder,
+                        generator = text_generator(session, model, encoder,
                                                    [np.random.randint(0, encoder.vocabulary_size)], temperature)
                         for _ in range(5):
                             sentence = ''
@@ -440,26 +423,26 @@ def lstm_demo(text, model_folder=None, model_dict=None):
                             print sentence
                         print('=' * 80)
                     # Measure validation set perplexity.
-                    eval_feed_dict = {v: np.zeros(v._shape) for v in [things['sampler_combined_start']]}
-                    eval_feed_dict[things['dropout_keep_prob']] = 1.0
-                    run_list = [things['sampler_combined_end'], things['sampler_prediction']]
+                    eval_feed_dict = {v: np.zeros(v._shape) for v in [model['sampler_combined_start']]}
+                    eval_feed_dict[model['dropout_keep_prob']] = 1.0
+                    run_list = [model['sampler_combined_end'], model['sampler_prediction']]
                     valid_logprob = 0
                     for _ in range(valid_size):
                         b = valid_batches.next()
-                        eval_feed_dict[things['sampler_input']] = b[0]
-                        eval_feed_dict[things['sampler_combined_start']], predictions = session.run(run_list, feed_dict = eval_feed_dict)
+                        eval_feed_dict[model['sampler_input']] = b[0]
+                        eval_feed_dict[model['sampler_combined_start']], predictions = session.run(run_list, feed_dict = eval_feed_dict)
                         valid_logprob = valid_logprob + logprob(predictions, b[1])
                     print('Validation set perplexity: %.2f' % float(np.exp(valid_logprob / valid_size)))
                 t0 = time.time()
 
 
 def load_and_write(folder, instance_filename, start_sentence, temperature):
-    things, model_dict = load_model(folder)
-    print model_dict
-    with tf.Session(graph=things['graph']) as session:
-        things['saver'].restore(session, os.path.join(folder, instance_filename))
-        seed = model_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
-        writer = text_generator(session, things, model_dict['encoder'], seed, temperature, depth=50, n_samples=100)
+    model, initialization_dict = load_model(folder)
+    print initialization_dict
+    with tf.Session(graph=model['graph']) as session:
+        model['saver'].restore(session, os.path.join(folder, instance_filename))
+        seed = initialization_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
+        writer = text_generator(session, model, initialization_dict['encoder'], seed, temperature, depth=50, n_samples=100)
         for l in range(100):
             for _ in range(80):
                 sys.stdout.write(writer.next())
@@ -483,12 +466,12 @@ if __name__ == "__main__":
     # text = np.fromstring(compile_data(data_folder), dtype=np.uint8)
     # text[text==ord('\r')] = ord('\n')
     # num_unrollings = 60
-    # model_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
+    # initialization_dict = dict(encoder=Encoder(text), num_unrollings=num_unrollings,
     #                   batch_size=50, unroll_shift=num_unrollings - 1, n_nodes=[512, 512, 512],
     #                   dropout_keep_prob=1.0)
     # lstm_demo(text=text,
     #           model_folder='/home/ubuntu/lstm/512_512_512_unroll60_drop10_rmsprop',
-    #           model_dict=model_dict)
+    #           initialization_dict=initialization_dict)
     #
     #
     base_folder = '/home/ubuntu/lstm/'
@@ -504,5 +487,5 @@ if __name__ == "__main__":
         print folder, " ", instance
         print "=" * 80
         load_and_write(full_folder, instance,
-                       'Casi toda la cristiandad occidental estaba sometida a los reyes francos, y los francos no',
+                       'Oscuro y tormentoso se presentaba el reinado de Witiza',
                        0.5)

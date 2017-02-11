@@ -5,6 +5,8 @@ import time
 import numpy as np
 import cv2
 import tensorflow as tf
+from dabble.otilio.smart_plotter import SmartPlotter
+from dabble.otilio.the_view import TheView
 
 
 class LanderState(object):
@@ -90,7 +92,7 @@ def init_state():
     return LanderState(l_pos, l_v, base_pos, fuel)
 
 
-def play(im_size, n_steps, display=False, player=get_action, state=None):
+def play(im_size, n_steps, display=False, player=get_action, state=None, display_text=False):
     '''
     Returns 3 n_steps-length np arrays, and the final state. The three
     arrays are: one with frames, one with actions, one with rewards.
@@ -110,12 +112,12 @@ def play(im_size, n_steps, display=False, player=get_action, state=None):
         state = propagate(state, a)
         r = state_to_reward(state)
         if r < 0.:
-            if display:
+            if display_text:
                 print "lose!"
             reward[i] = r
             state = init_state()
         elif r > 0.:
-            if display:
+            if display_text:
                 print "win!"
             reward[i] = r
             state = init_state()
@@ -136,7 +138,7 @@ def conv_relu(input, kernel_shape, stride):
     return tf.nn.relu(conv + biases)
 
 
-def model(data, prev_outputs, image_size, n_channels, n_actions, n_prev_actions):
+def make_network(data, prev_outputs, image_size, n_channels, n_actions, n_prev_actions):
     kernel_defs = [(8, 16, 4), (2, 32, 1)]  # each conv layer, (patch_side, n_kernels, stride)
     fc_sizes = [256]
     n_input_kernels = n_channels
@@ -172,29 +174,29 @@ def model(data, prev_outputs, image_size, n_channels, n_actions, n_prev_actions)
 
 
 def make_learner(image_size, n_channels, n_actions, n_prev_actions):
-    things = {}
-    things['graph'] = tf.Graph()
-    with things['graph'].as_default():
+    model = {}
+    model['graph'] = tf.Graph()
+    with model['graph'].as_default():
 
         # Input and teacher place holders
-        things['input'] = tf.placeholder(tf.float32)
-        things['output'] = tf.placeholder(tf.float32)
-        things['prev_outputs_input'] = tf.placeholder(tf.float32)
+        model['input'] = tf.placeholder(tf.float32)
+        model['output'] = tf.placeholder(tf.float32)
+        model['prev_outputs_input'] = tf.placeholder(tf.float32)
 
-        things['logits'] = model(things['input'], things['prev_outputs_input'], image_size, n_channels, n_actions, n_prev_actions)
-        things['loss'] = tf.reduce_mean(
-            tf.nn.softmax_cross_entropy_with_logits(things['logits'], things['output']))
-        things['q_loss'] = tf.reduce_mean(
-            tf.square(things['logits'] - things['output']))
+        model['logits'] = make_network(model['input'], model['prev_outputs_input'], image_size, n_channels, n_actions, n_prev_actions)
+        model['loss'] = tf.reduce_mean(
+            tf.nn.softmax_cross_entropy_with_logits(model['logits'], model['output']))
+        model['q_loss'] = tf.reduce_mean(
+            tf.square(model['logits'] - model['output']))
 
-        things['learner'] = tf.train.AdamOptimizer(0.001).minimize(things['loss'])
-        things['q_learner'] = tf.train.RMSPropOptimizer(1e-9, decay=0.99, epsilon=1e-12).minimize(things['q_loss'])
+        model['learner'] = tf.train.AdamOptimizer(0.001).minimize(model['loss'])
+        model['q_learner'] = tf.train.RMSPropOptimizer(1e-9, decay=0.99, epsilon=1e-12).minimize(model['q_loss'])
 
         # Predictors for the training, validation, and test data.
-        things['prediction'] = tf.nn.softmax(things['logits'])
-        things['saver'] = tf.train.Saver()
+        model['prediction'] = tf.nn.softmax(model['logits'])
+        model['saver'] = tf.train.Saver()
 
-    return things
+    return model
 
 
 def make_datasets(movie, actions, reward, n_validation, n_test, frames_per_sequence):
@@ -278,7 +280,7 @@ class Player(object):
         self._mean_im = mean_im
         self._n_actions = n_actions
 
-    def play(self, state, things, session, explore_epsilon=0.):
+    def play(self, state, model, session, explore_epsilon=0.):
         self._im = state_to_im(state, self._im)
         self._im -= self._mean_im
         self._frame_mem.append(self._im.copy())
@@ -288,8 +290,8 @@ class Player(object):
             current_sequence = sequencify(np.asarray(self._frame_mem), len(self._frame_mem))
             current_prev_outputs = sequencify(np.asarray(self._action_mem)[-(len(self._frame_mem) - 1):],
                                               len(self._frame_mem) - 1)
-            feed_dict = {things['input']: current_sequence, things['prev_outputs_input']: current_prev_outputs}
-            prediction = session.run(things['prediction'], feed_dict=feed_dict)
+            feed_dict = {model['input']: current_sequence, model['prev_outputs_input']: current_prev_outputs}
+            prediction = session.run(model['prediction'], feed_dict=feed_dict)
             assert prediction.shape == (1, self._n_actions)
             action = np.argmax(prediction[0])
         else:
@@ -300,12 +302,12 @@ class Player(object):
 
 def load_model(folder, instance_filename):
     with open(os.path.join(folder, 'model.pickle'), 'r') as f:
-        model_dict = pickle.load(f)
-    things = make_learner(model_dict['frame_size'],
-                          model_dict['frames_per_sequence'],
-                          model_dict['n_actions'],
-                          model_dict['frames_per_sequence'] - 1)
-    return things, model_dict
+        initialization_dict = pickle.load(f)
+    model = make_learner(initialization_dict['frame_size'],
+                          initialization_dict['frames_per_sequence'],
+                          initialization_dict['n_actions'],
+                          initialization_dict['frames_per_sequence'] - 1)
+    return model, initialization_dict
 
 
 def learn_supervised(save=True):
@@ -322,18 +324,18 @@ def learn_supervised(save=True):
     mean_im = np.mean(movie, axis=0)
     movie -= mean_im
     n_actions = actions.shape[1]
-    things = make_learner(frame_size, frames_per_sequence, n_actions, frames_per_sequence - 1)
+    model = make_learner(frame_size, frames_per_sequence, n_actions, frames_per_sequence - 1)
 
     n_steps = n_training * n_passes / batch_size
     t0_s=time.strftime("%c")
     folder = '/home/ubuntu/lander/' + t0_s
     os.mkdir(folder)
-    model_dict = dict(frame_size=frame_size, frames_per_sequence=frames_per_sequence,
+    initialization_dict = dict(frame_size=frame_size, frames_per_sequence=frames_per_sequence,
                       n_actions=n_actions, mean_im=mean_im)
     with open(os.path.join(folder, 'model.pickle'), 'w') as f:
-        pickle.dump(model_dict, f)
+        pickle.dump(initialization_dict, f)
 
-    with tf.Session(graph=things['graph']) as session:
+    with tf.Session(graph=model['graph']) as session:
         tf.initialize_all_variables().run()
         print('Initialized')
         train, validation, test = make_datasets(movie, actions, reward, n_validation, n_test, frames_per_sequence)
@@ -344,46 +346,69 @@ def learn_supervised(save=True):
             batch_data = sequencify(train[0], frames_per_sequence, idx)
             batch_prev_outputs = sequencify(train[1], frames_per_sequence - 1, idx)
             batch_labels = train[2][idx]
-            feed_dict = {things['input']: batch_data, things['prev_outputs_input']: batch_prev_outputs, things['output']: batch_labels}
-            session.run(things['learner'], feed_dict=feed_dict)
+            feed_dict = {model['input']: batch_data, model['prev_outputs_input']: batch_prev_outputs, model['output']: batch_labels}
+            session.run(model['learner'], feed_dict=feed_dict)
             if (step % (n_steps / 10) == 0):
                 l, predictions = session.run(
-                    [things['loss'], things['prediction']], feed_dict=feed_dict)
+                    [model['loss'], model['prediction']], feed_dict=feed_dict)
                 print('Minibatch loss at step %d/%d: %.3f, accuracy %.1f%%' % (step, n_steps, l, accuracy(predictions, batch_labels)))
-                feed_dict = {things['input']: validation[0], things['prev_outputs_input']: validation[1], things['output']: validation[2]}
-                l, predictions, = session.run([things['loss'], things['prediction']], feed_dict=feed_dict)
+                feed_dict = {model['input']: validation[0], model['prev_outputs_input']: validation[1], model['output']: validation[2]}
+                l, predictions, = session.run([model['loss'], model['prediction']], feed_dict=feed_dict)
                 print('Validation loss %.3f, accuracy: %.1f%%' % (l, accuracy(predictions, validation[2])))
                 display_activators(validation[0], predictions)
                 if save:
-                    things['saver'].save(session, os.path.join(folder, 'instance_%.5i' % step))
+                    model['saver'].save(session, os.path.join(folder, 'instance_%.5i' % step))
 
-        feed_dict = {things['input']: test[0], things['prev_outputs_input']: test[1]}
-        predictions, = session.run([things['prediction']], feed_dict=feed_dict)
+        feed_dict = {model['input']: test[0], model['prev_outputs_input']: test[1]}
+        predictions, = session.run([model['prediction']], feed_dict=feed_dict)
         print('Test accuracy: %.1f%%' % accuracy(predictions, test[2]))
         player = Player(frames_per_sequence, frame_size, mean_im, n_actions)
 
         print "Let's play"
-        _, _, reward, _ = play(frame_size, 2000, display=True, player=lambda state: player.play(state, things, session))
+        _, _, reward, _ = play(frame_size, 2000, display=True, player=lambda state: player.play(state, model, session))
         print "Win: %i, lose: %i" % (np.sum(reward > 0), np.sum(reward < 0))
 
 
 def load_and_play(folder, instance_filename):
-    things, model_dict = load_model(folder, instance_filename)
-    with tf.Session(graph=things['graph']) as session:
-        things['saver'].restore(session, os.path.join(folder, instance_filename))
-        player = Player(model_dict['frames_per_sequence'], model_dict['frame_size'], model_dict['mean_im'], model_dict['n_actions'])
+    model, initialization_dict = load_model(folder, instance_filename)
+    with tf.Session(graph=model['graph']) as session:
+        model['saver'].restore(session, os.path.join(folder, instance_filename))
+        player = Player(initialization_dict['frames_per_sequence'], initialization_dict['frame_size'], initialization_dict['mean_im'], initialization_dict['n_actions'])
 
         print "Let's play"
-        _, _, reward, _ = play(model_dict['frame_size'], 2000, display=True, player=lambda state: player.play(state, things, session))
+        _, _, reward, _ = play(initialization_dict['frame_size'], 2000, display=True, player=lambda state: player.play(state, model, session))
         print "Win: %i, lose: %i" % (np.sum(reward > 0), np.sum(reward < 0))
 
 
+def make_frozen_net(model, initialization_dict):
+    with model['graph'].as_default():
+        trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+        # Input and teacher place holders
+        model['frozen_input'] = tf.placeholder(tf.float32)
+        model['frozen_output'] = tf.placeholder(tf.float32)
+        model['frozen_prev_outputs_input'] = tf.placeholder(tf.float32)
+
+        with tf.variable_scope('frozen'):
+            model['frozen_logits'] = make_network(model['frozen_input'], model['frozen_prev_outputs_input'],
+                                                  initialization_dict['frame_size'],
+                                                  initialization_dict['frames_per_sequence'],
+                                                  initialization_dict['n_actions'],
+                                                  initialization_dict['frames_per_sequence'] - 1)
+        frozen_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='frozen')
+        model['frozen_assignments'] = []
+        for v, w in zip(trainables, frozen_trainables):
+            assert w.name == "frozen/" + v.name
+            model['frozen_assignments'] = w.assign(v)
+    return model
+
+
 def load_and_reinforce(folder, instance_filename):
-    things, model_dict = load_model(folder, instance_filename)
-    frames_per_sequence = model_dict['frames_per_sequence']
-    frame_size = model_dict['frame_size']
-    n_actions = model_dict['n_actions']
-    mean_im = model_dict['mean_im']
+    model, initialization_dict = load_model(folder, instance_filename)
+    model = make_frozen_net(model, initialization_dict)
+    frames_per_sequence = initialization_dict['frames_per_sequence']
+    frame_size = initialization_dict['frame_size']
+    n_actions = initialization_dict['n_actions']
+    mean_im = initialization_dict['mean_im']
     mem_size = 100000
     frame_mem = deque([], mem_size)
     action_mem = deque([], mem_size)
@@ -392,99 +417,82 @@ def load_and_reinforce(folder, instance_filename):
     replay_size = 31
     gamma = 0.95
     explore_epsilon = 0.1
-    n_training = 500000
+    n_training = 1000000
     n_training_per_epoch = 1000
     state = None
     player = Player(frames_per_sequence, frame_size, mean_im, n_actions)
-    with tf.Session(graph=things['graph']) as session:
-        things['saver'].restore(session, os.path.join(folder, instance_filename))
+    q_value = np.array([0.])
+    q_loss = np.array([0.])
+    q_validation = np.array([0.])
+    avg_reward = np.array([0.])
+    display_reward_alpha = 0.999
+    view_reward = TheView(title="Reward", window_size=(1000, 300), backend='pyqt')
+    reward_plotter = SmartPlotter({'reward': lambda: avg_reward}, parent=view_reward)
+    view_q = TheView(title="Q values", window_size=(1000, 450), backend='pyqt')
+    q_plotter = SmartPlotter({'q_value': lambda: q_value,
+                              'q_loss': lambda: q_loss,
+                              'q_validation': lambda: q_validation}, parent=view_q)
+    with tf.Session(graph=model['graph']) as session:
+        model['saver'].restore(session, os.path.join(folder, instance_filename))
         tf.get_variable_scope().reuse_variables()
         w = tf.get_variable("flat_out/weights")
         b = tf.get_variable("flat_out/biases")
         w.assign(w / 1000.).op.run()
         b.assign(b / 1000.).op.run()
+        tf.initialize_variables(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='frozen')).run()
+        session.run(model['frozen_assignments'])
         print('Initialized')
-        movie, actions, reward, _ = play(frame_size, 10 + n_validation + 10 + frames_per_sequence - 1, player=lambda state:player.play(state, things, session))
+        movie, actions, reward, _ = play(frame_size, 10 + n_validation + 10 + frames_per_sequence - 1, player=lambda state:player.play(state, model, session))
         _, validation, _ = make_datasets(movie, actions, reward, n_validation, 10, frames_per_sequence)
         for iteration in range(n_training):
-            movie, actions, reward, state = play(frame_size, 1,
-                player=lambda state:player.play(state, things, session, explore_epsilon), state=state, display=True)
+            movie, actions, reward, state = play(frame_size, n_steps=1,
+                player=lambda state:player.play(state, model, session, explore_epsilon), state=state, display=True)
             frame_mem.append(movie[0])
             action_mem.append(actions[0])
             reward_mem.append(reward[0])
+            avg_reward[0] = display_reward_alpha * avg_reward[0] + (1 - display_reward_alpha) * reward[0]
+            if reward[0] != 0:
+                reward_plotter.update()
             if len(frame_mem) < 500 * replay_size + frames_per_sequence + 1:
                 continue
             idx = np.random.randint(0, len(frame_mem) - frames_per_sequence - 1, replay_size)
-#            idx[-1] = len(frame_mem) - frames_per_sequence - 1
+#            idx[-1] = len(frame_mem) - frames_per_sequence - 1  # make sure the latest action is always in the batch
             batch_data = sequencify(frame_mem, frames_per_sequence, idx)
             batch_prev_outputs = sequencify(action_mem, frames_per_sequence - 1, idx)
             batch_next_data = sequencify(frame_mem, frames_per_sequence, idx, offset=1)
             batch_next_prev_outputs = sequencify(action_mem, frames_per_sequence - 1, idx, offset=1)
             batch_actions = np.array([action_mem[i] for i in idx + frames_per_sequence - 1])
             batch_rewards = np.array([reward_mem[i] for i in idx + frames_per_sequence - 1])
-            feed_dict = {things['input']: batch_data, things['prev_outputs_input']: batch_prev_outputs}
-            current_q = session.run(things['logits'], feed_dict=feed_dict)  # get the current Q values
-            feed_dict_next = {things['input']: batch_next_data, things['prev_outputs_input']: batch_next_prev_outputs}
-            next_q = session.run(things['logits'], feed_dict=feed_dict_next)  # get the next Q values
+            feed_dict = {model['input']: batch_data, model['prev_outputs_input']: batch_prev_outputs}
+            current_q = session.run(model['logits'], feed_dict=feed_dict)  # get the current Q values
+            feed_dict_next = {model['frozen_input']: batch_next_data, model['frozen_prev_outputs_input']: batch_next_prev_outputs}
+            next_q = session.run(model['frozen_logits'], feed_dict=feed_dict_next)  # get the next Q values
             next_values = (batch_rewards == 0) * gamma * np.amax(next_q, axis=1) + batch_rewards  # only non-terminal (reward=0) get Q values as part of the value
             current_q[np.arange(current_q.shape[0]), np.argmax(batch_actions, axis=1)] = next_values
-            feed_dict = {things['input']: batch_data, things['prev_outputs_input']: batch_prev_outputs, things['output']: current_q}
-            session.run(things['q_learner'], feed_dict=feed_dict)
+            feed_dict = {model['input']: batch_data, model['prev_outputs_input']: batch_prev_outputs, model['output']: current_q}
+            session.run(model['q_learner'], feed_dict=feed_dict)
             if iteration % n_training_per_epoch == 0:
-                epoch = iteration / n_training_per_epoch
-                l, modified_q = session.run(
-                    [things['q_loss'], things['logits']], feed_dict=feed_dict)
-                print('Epoch %i q_loss, q_avg: %.4f, %.4f' % (epoch, l, np.mean(np.amax(modified_q, axis=1))))
-                feed_dict = {things['input']: validation[0], things['prev_outputs_input']: validation[1]}
-                q = session.run(things['logits'], feed_dict=feed_dict)
-                print('Validation q_avg: %.6f' % np.mean(np.amax(q, axis=1)))
+                session.run(model['frozen_assignments'])  # update the frozen network
+                q_loss[0], batch_q = session.run([model['q_loss'], model['logits']], feed_dict=feed_dict)
+                q_value[0] = np.mean(np.amax(batch_q, axis=1))
+                feed_dict = {model['input']: validation[0], model['prev_outputs_input']: validation[1]}
+                validation_batch_q = session.run(model['logits'], feed_dict=feed_dict)
+                q_validation[0] = np.mean(np.amax(validation_batch_q, axis=1))
+                q_plotter.update()
                 epoch_reward = np.array([reward_mem[i] for i in range(len(reward_mem) - n_training_per_epoch, len(reward_mem))])
-                print "Epoch win: %i, lose: %i" % (np.sum(epoch_reward > 0), np.sum(epoch_reward < 0))
+                epoch = iteration / n_training_per_epoch
+                print "Epoch %i win: %i, lose: %i" % (epoch, np.sum(epoch_reward > 0), np.sum(epoch_reward < 0))
 
                 # if epoch % 100 == 0:
-                #     things['saver'].save(session, os.path.join(folder, instance_filename, '_reinforce_epoch_%.2i' % epoch))
+                #     model['saver'].save(session, os.path.join(folder, instance_filename, '_reinforce_epoch_%.2i' % epoch))
 
-        feed_dict = {things['input']: test[0], things['prev_outputs_input']: test[1]}
-        q = session.run(things['logits'], feed_dict=feed_dict)
+        feed_dict = {model['input']: test[0], model['prev_outputs_input']: test[1]}
+        q = session.run(model['logits'], feed_dict=feed_dict)
         print('Test q_avg: %.2f' % np.mean(np.amax(q, axis=1)))
 
         print "Let's play"
-        _, _, reward, _ = play(frame_size, 2000, display=True, player=lambda state: player.play(state, things, session))
+        _, _, reward, _ = play(frame_size, 2000, display=True, player=lambda state: player.play(state, model, session))
         print "Win: %i, lose: %i" % (np.sum(reward > 0), np.sum(reward < 0))
-
-
-
-def gsum(values, shifts):
-    total = []
-    real_lengths = [len(v) + s for v, s in zip(values, shifts)]
-    max_length = max(real_lengths)
-    carry = 0
-    i = 0
-    while carry != 0 or i < max_length:
-        for j in range(len(values)):
-            if i >= shifts[j] and i < real_lengths[j]:
-                carry += values[j][i - shifts[j]]
-        total.append(carry % 10)
-        carry /= 10
-        i += 1
-    return total
-
-
-def gprod(l1, l2):
-    n1 = len(l1)
-    n2 = len(l2)
-    if n1 == 0 or n2 == 0:
-        return []
-    if n1 == 1 and n1 == 1:
-        m = l1[0] * l2[0]
-        if m >= 10:
-            return [m % 10, m / 10]
-        else:
-            return [m]
-    else:
-        a, b = l1[n1 / 2:], l1[:n1 / 2]
-        c, d = l2[n2 / 2:], l2[:n2 / 2]
-        return gsum([gprod(a, c), gprod(b, c), gprod(a, d), gprod(b, d)], [n1 / 2 + n2 / 2, n2 / 2, n1 / 2, 0])
 
 
 if __name__ == "__main__":

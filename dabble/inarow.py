@@ -1,7 +1,7 @@
 import cv2
 import scipy.weave
 import numpy as np
-from nn import NN, Tanh
+from nn import NN, Tanh, Relu
 
 
 def all_states(shape):
@@ -84,10 +84,12 @@ def is_terminal(state, L):
 
 
 class ValueNet(object):
-    def __init__(self, shape, layer_sizes=[], batch_size=50, eta=0.1, momentum=0.9):
+    def __init__(self, shape, layer_sizes=[], batch_size=50, eta=0.1, momentum=0.9,
+                 init_w_scale=0.1, init_b_scale=0.1):
         self._shape = shape
         all_sizes = [np.prod(shape) * 3] + layer_sizes + [1]
-        self._n = NN(all_sizes, [Tanh] * (len(all_sizes) - 1), eta=eta, momentum=momentum)
+        self._n = NN(all_sizes, [Relu] * (len(all_sizes) - 2) + [Tanh], eta=eta, momentum=momentum,
+                     init_w_scale=init_w_scale, init_b_scale=init_b_scale)
         self._batch_size = batch_size
         self._batch_states = np.zeros((self._batch_size, all_sizes[0]))
         self._batch_values = np.zeros((self._batch_size, 1))
@@ -360,6 +362,12 @@ def self_play():
     v2 = [p2.get_value(s) for s in p2_s]
     all_s = np.concatenate((p1_s, p2_s), axis=0)
     all_v = np.hstack((v1, v2))[:, None]
+    positives = all_v > 0
+    negatives = all_v < 0
+    zeros = all_v == 0
+    print("avg_pos: %.3f, avg_neg: %.3f, avg_zero: %.3f" %
+          (np.mean(all_v[positives]), np.mean(all_v[negatives]),
+           np.mean(all_v[zeros])))
 
     golden_starts = [(0, 0), (0, 1), (1, 0), (1, 1)]
     golden_states = [np.zeros(shape) for _ in golden_starts]
@@ -367,14 +375,23 @@ def self_play():
         s[i, j] = 1.
     golden_indices = [np.where(np.all(all_s == g, axis=(1,2)))[0][0] for g in golden_states]
 
-    v = ValueNet(shape, [20, 20], eta=0.025, momentum=0.8)
-    for iteration in range(10000):
-        v.learn_values(all_s, all_v)
-        current_values = [v.get_single_value(s) for s in golden_states]
-        if iteration % 100 == 0:
-            print("current: %s; golden: %s" % (current_values, all_v[golden_indices, 0]))
+    v = ValueNet(shape, [25, 25], eta=0.02, momentum=0.8, init_w_scale=0.1, init_b_scale=0.1)
+    batch_size = 256
+    import cPickle
+    for iteration in range(100000):
+        order = np.random.permutation(len(all_s))
+        for i in range(len(all_s) / batch_size + 1):
+            v.learn_values(all_s[order[i * batch_size:(i + 1) * batch_size]], all_v[order[i * batch_size:(i + 1) * batch_size]])
+        if iteration % 500 == 0:
+            current_values = [v.get_single_value(s) for s in golden_states]
+            all_current_values = v.get_values(all_s)
+            rms = np.sqrt(np.mean((all_current_values - all_v) ** 2))
+            print("rms: %.3f, avg_pos: %.3f, avg_neg: %.3f, avg_zero: %.3f, current: %s; golden: %s" %
+                  (rms, np.mean(all_current_values[positives]), np.mean(all_current_values[negatives]),
+                   np.mean(all_current_values[zeros]), current_values, all_v[golden_indices, 0]))
+            with open('valuenet_%s.pkl'%(shape, ), 'w') as f:
+                cPickle.dump(v, f)
     assert False
-
 
     L = 3
     gamma = 0.99

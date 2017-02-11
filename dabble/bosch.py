@@ -304,6 +304,19 @@ def clean_numeric_by_hash():
                 break
 
 
+def leave_one_out(data, columnName):
+    mean_response = data.groupby(columnName)['Response'].mean().reset_index()
+    # count = data1.groupby(columnName)['Response'].count()
+    # group_data = group_data.loc[count > 1]
+    # outcomes = data2['Response'].values
+    x = pd.merge(data[[columnName, 'Response']], mean_response,
+                 suffixes=('x_', ''),
+                 how='left',
+                 on=columnName,
+                 left_index=True)['Response']
+    # x = ((x*x.shape[0])-outcomes)/(x.shape[0]-1)
+    x = x + np.random.normal(0, .01, x.shape[0])
+    return x.fillna(x.mean())
 
 def pca_converter(data, feature_discriminabilities, explained_variance):
     '''
@@ -466,7 +479,7 @@ def simple_connected_components(all_sets, edges):
 def connected_components(n_vertices, edges, similarity=None, n_cc=0):
     '''
     :param n_vertices:
-    :param edges:
+    :param edges: n-vector, (edges[0], edges[1]) is the first edge, (edges[2], edges[3]) the second edge, etc
     :param similarity: if given, length edges/2, opposite of weight for an edge, higher
         similarity edges will be chosen first
     :param n_cc: clustering stops when this number of components are left (or when
@@ -518,7 +531,7 @@ def connected_components(n_vertices, edges, similarity=None, n_cc=0):
 def jaccard_dbscan(unique_feature_sets, n_clusters):
     '''
     Cluster via DBScan (not exactly: instead of a fixed max edge distance/min similarity,
-        we do Prim's minimum spanning tree until we have only n_clusters left)
+        we do Kruskal's minimum spanning tree until we have only n_clusters left)
         based on jaccard distance
     '''
     edges, jaccards = jaccard_graph(unique_feature_sets, 0.7)  # 0.7 is low enough to make all one big cluster, or almost
@@ -785,7 +798,7 @@ def cluster_maxisets(filename, n_clusters, exclude_files=None):
         print "Dropped from %i to %i train and %i to %i test records" % (old_ntrain, len(train_set_idx), old_ntest, len(test_set_idx))
 
     best = (-1, -1, -1)
-    for _ in range(100):
+    for _ in range(10):
         cc = jaccard_kmeans(unique_feature_sets, n_clusters)
         train_set_idx['cc'] = cc[train_set_idx['feature_set_idx'].values]
         test_set_idx['cc'] = cc[test_set_idx['feature_set_idx'].values]
@@ -991,51 +1004,65 @@ def best_mcc(truth, p):
 
 def mcc_eval(p, dtrain):
     truth = dtrain.get_label()
-    m = best_mcc(truth, p)[0]
+    m, thr, (TP, TN, FP, FN) = best_mcc(truth, p)
+    # print "TP:", TP, "TN", TN, "FP", FP, "FN", FN
     return 'MCC', m
 
 
-def get_xgb_params(light_mode):
-    params = {}
-    params['booster'] = "gbtree"
-    params['rate_drop'] = 0.5  # only meaningful if booster is 'dart'
-    params['lambda'] = 1.0  # L2 regularization; only meaningful if booster is 'gblinear'
-    params['alpha'] = 1.0  # L1 regularization; only meaningful if booster is 'gblinear'
-    params['objective'] = "binary:logistic"
-    params['eta'] = 0.02 if light_mode else 0.002
-    params['learning_rate'] = params['eta']  # docs are so bad I dont know if it is eta or learning_rate or either
-    params['gamma'] = 1.
-    params['max_depth'] = 15
-    params['colsample_bytree'] = 0.7 if light_mode else 0.7
-    params['colsample_bylevel'] = 0.7 if light_mode else 0.7
-    params['min_child_weight'] = 0.1
-    params['base_score'] = 0.005
-    params['silent'] = True
-    return params
+def xgb_params_generator(shape):
+    # choices = ((1e-3, 3, 70), (1e-3, 6, 50), (1e-3, 9, 30))
+    choices = ((0.02, 12, 30),)
+    # etas = [1e-3, 1e-4]
+    # depths = [4, 8]#[3, 6, 9]
+    # ncols = [3, 10, 25]#[2, 20, 200]
+    # for eta, depth, ncol in itertools.product(etas, depths, ncols):
+    for eta, depth, ncol in choices:
+        # print "eta=%.5f, depth=%i, ncols=%i" % (eta, depth, ncol)
+        params = {}
+        params['booster'] = "gbtree"
+        params['rate_drop'] = 0.5  # only meaningful if booster is 'dart'
+        params['lambda'] = 1.0  # L2 regularization
+        params['alpha'] = 0.  # L1 regularization
+        params['objective'] = "binary:logistic"
+        params['eta'] = eta
+        params['learning_rate'] = params['eta']  # docs are so bad I dont know if it is eta or learning_rate or either
+        params['gamma'] = 1.
+        params['max_depth'] = depth
+        params['colsample_bytree'] = min(1., (float(ncol) + 0.5) / shape[1])
+        params['colsample_bylevel'] = 1.
+        params['max_delta_step'] = 0.
+        params['min_child_weight'] = 1.0
+        params['base_score'] = 0.005
+        params['silent'] = True
+
+        nrounds = 200
+
+        yield params, nrounds
 
 
 def get_xgb_clf():
-    params = get_xgb_params(light_mode=False)
-    params['n_estimators'] = 500
+    params, rounds = xgb_params_generator(light_mode=False, shape=(1000, 200)).next()
+    params['n_estimators'] = rounds
     return xgboost.XGBClassifier(**params)
 
 
-def _fill_nans(train_dict, test_dict, stats):
+def _fill_nans(train_dict, test_dict, stats, only_categorical):
     # Notice now we use both training and testing to get the mean to replace nans
-    for k in ['date', 'numeric']:
-        stats[k] = _make_stats(k, pd.concat((train_dict[k], test_dict[k]), axis=0))
-        # Fill numeric and date nans with the training + testing mean
-        train_dict[k] = train_dict[k].fillna(stats[k]['mean'], axis=0)
-        test_dict[k] = test_dict[k].fillna(stats[k]['mean'], axis=0)
+    if not only_categorical:
+        for k in ['date', 'numeric']:
+            stats[k] = _make_stats(k, pd.concat((train_dict[k], test_dict[k]), axis=0))
+            # Fill numeric and date nans with the training + testing mean
+            train_dict[k] = train_dict[k].fillna(stats[k]['mean'], axis=0)
+            test_dict[k] = test_dict[k].fillna(stats[k]['mean'], axis=0)
+            stats[k] = _make_stats(k, train_dict[k])
 
     # Transform categorical data into consecutive numbers
     all_categorical = pd.concat((train_dict['categorical'], test_dict['categorical']), axis=0)
     all_categorical = all_categorical.rank(axis=0, method='dense', na_option='bottom')
     test_dict['categorical'] = all_categorical.iloc[len(train_dict['categorical']):]
     train_dict['categorical'] = all_categorical.iloc[:len(train_dict['categorical'])]
+    stats['categorical'] = _make_stats('categorical', all_categorical)
 
-    for k in train_dict.keys():
-        stats[k] = _make_stats(k, train_dict[k])
     # print "Filled nans:"
     # print stats['categorical']
     # print stats['date']
@@ -1043,17 +1070,37 @@ def _fill_nans(train_dict, test_dict, stats):
     return train_dict, test_dict, stats
 
 
-def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
-                     remove_absent=True, remove_invariant=True):
+def _combine_categorical(train, test, stats):
+    if train.shape[1] <= 1:
+        return train, test, stats
+    combined_train = train.copy()#pd.DataFrame(index=train.index)
+    combined_test = test.copy()#pd.DataFrame(index=test.index)
+    for c in itertools.combinations(train.columns, 2):
+        combined_train['*'.join(c)] = train[c[0]] * stats.loc[c[1], 'unique'] - train[c[1]]
+        combined_test['*'.join(c)] = test[c[0]] * stats.loc[c[1], 'unique'] - test[c[1]]
+    combined_stats = pd.concat((train, test), axis=0)
+    return combined_train, combined_test, combined_stats
+
+
+def _preprocess_data(train_dict, test_dict):
     '''
     :param train_dict: with keys 'categorical', 'date', 'numeric', 'magic', and 'response', each a frame
-    :param test_dict: with keys 'categorical', 'date', 'numeric' and 'magic', each a frame
-    :param other_positives_dict: with keys 'categorical', 'date', 'numeric' and 'magic', each a frame
+    :param test_dict: with keys 'categorical', 'date', 'numeric' and 'magic', each a frame; optionally
+        it can have 'response' too, and in that case it can be used for validation
     '''
+    remove_absent = True
+    remove_invariant = False
     fill_nans = False
     normalize_mean_and_std = False
     pick_only_negative_neighbors = False
     resample = False
+    minimal_features = True
+    use_leave_one_out = True
+    correlation_max = 0.95  # None to keep all features
+    # Work on copies of the dictionaries
+    train_dict = {k: train_dict[k] for k in train_dict.keys()}
+    test_dict = {k: test_dict[k] for k in test_dict.keys()}
+
     stats = {k: _make_stats(k, v) for k, v in train_dict.iteritems()}
     # print stats['categorical']
     # print stats['date']
@@ -1065,7 +1112,6 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
                         [('categorical', 0.05), ('date', 0.05), ('numeric', 0.05), ('magic', 0.5), ('response', 0.)]}
         train_dict = {k: train_dict[k].loc[:, present_dict[k]] for k in train_dict.keys()}
         test_dict = {k: test_dict[k].loc[:, present_dict[k]] for k in test_dict.keys()}
-        other_positives_dict = {k: other_positives_dict[k].loc[:, present_dict[k]] for k in other_positives_dict.keys()}
         stats = {k: _make_stats(k, train_dict[k]) for k in train_dict.keys()}
         # print "Removed absents:"
         # print stats['categorical']
@@ -1074,10 +1120,23 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
         # print stats['response']
         # print "After absents categorical:", len(train_dict['categorical'].columns), "date:", len(train_dict['date'].columns), "numeric:", len(train_dict['numeric'].columns)
 
+    train_dict['date'] = train_dict['date'].sub(train_dict['magic']['min_date'], axis='rows')
+    test_dict['date'] = test_dict['date'].sub(test_dict['magic']['min_date'], axis='rows')
+    train_dict['date']['weekday'] = train_dict['magic']['min_date'] % 16.8
+    test_dict['date']['weekday'] = test_dict['magic']['min_date'] % 16.8
+    stats['date'] = _make_stats('date', train_dict['date'])
+
     # Always remove numeric and date features that have no variation in the training set
     # Categorical gets special conditions
-    train_dict['magic']['magic_1'] = 1 * (train_dict['magic']['magic_1'] > 1)
-    train_dict['magic']['magic_2'] = 1 * (train_dict['magic']['magic_2'] > 1)
+    assert train_dict['categorical'].index.equals(train_dict['magic'].index)
+    train_dict['categorical'].loc[:, 'magic_1'] = 1 * (train_dict['magic']['magic_1'] > 1)
+    train_dict['categorical'].loc[:, 'magic_2'] = 1 * (train_dict['magic']['magic_2'] > 1)
+    test_dict['categorical'].loc[:, 'magic_1'] = 1 * (test_dict['magic']['magic_1'] > 1)
+    test_dict['categorical'].loc[:, 'magic_2'] = 1 * (test_dict['magic']['magic_2'] > 1)
+    train_dict['magic'] = train_dict['magic'].drop(['magic_1', 'magic_2'], axis=1)
+    test_dict['magic'] = test_dict['magic'].drop(['magic_1', 'magic_2'], axis=1)
+    stats['categorical'] = _make_stats('categorical', train_dict['categorical'])
+
     variant_conditions = [('numeric', 'std', 0.), ('date', 'std', 0.)]
     if remove_invariant:
         variant_conditions.append(('categorical', 'unique', 1))
@@ -1085,7 +1144,6 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
         variant = (stats[k][stat] > thr)
         train_dict[k] = train_dict[k].loc[:, variant]
         test_dict[k] = test_dict[k].loc[:, variant]
-        other_positives_dict[k] = other_positives_dict[k].loc[:, variant]
         stats[k] = _make_stats(k, train_dict[k])
     # print "Removed invariant:"
     # print stats['categorical']
@@ -1094,23 +1152,39 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
     # print "After invariants categorical:", len(train_dict['categorical'].columns), "date:", len(train_dict['date'].columns), "numeric:", len(train_dict['numeric'].columns)
 
     # Time to select meaningful positives and join them to the training set
-    informations = [('categorical', 0.1), ('date', 0.5), ('numeric', 0.95)]
-    informative_positives_by_type = [other_positives_dict[k].count(axis=1) > thr * stats[k]['presence'].sum()
-                                     for k, thr in informations if stats[k]['presence'].sum() > 0]
-    informative_positives = pd.concat(informative_positives_by_type, axis=1).all(axis=1)
-    for k in ['categorical', 'date', 'numeric', 'magic']:
-        other_positives_dict[k] = other_positives_dict[k][informative_positives]
-        train_dict[k] = pd.concat((train_dict[k], other_positives_dict[k]))
-    train_dict['response'] = pd.concat((train_dict['response'], pd.DataFrame({'Response':np.ones(len(other_positives_dict['numeric'])),
-                                                                              'Id': other_positives_dict['numeric'].index.values}).set_index('Id')))
+    # if add_positives:
+    #     informations = [('categorical', 0.1), ('date', 0.5), ('numeric', 0.95)]
+    #     informative_positives_by_type = [other_positives_dict[k].count(axis=1) > thr * stats[k]['presence'].sum()
+    #                                      for k, thr in informations if stats[k]['presence'].sum() > 0]
+    #     informative_positives = pd.concat(informative_positives_by_type, axis=1).all(axis=1)
+    #     for k in ['categorical', 'date', 'numeric', 'magic']:
+    #         other_positives_dict[k] = other_positives_dict[k][informative_positives]
+    #         train_dict[k] = pd.concat((train_dict[k], other_positives_dict[k]))
+    #     train_dict['response'] = pd.concat((train_dict['response'], pd.DataFrame({'Response':np.ones(len(other_positives_dict['numeric'])),
+    #                                                                               'Id': other_positives_dict['numeric'].index.values}).set_index('Id')))
 
-    train_dict['date'] = train_dict['date'].sub(train_dict['magic']['min_date'], axis='rows')
-    test_dict['date'] = test_dict['date'].sub(test_dict['magic']['min_date'], axis='rows')
-    train_dict['date']['weekday'] = train_dict['magic']['min_date'] % 16.8
-    test_dict['date']['weekday'] = test_dict['magic']['min_date'] % 16.8
+    if use_leave_one_out:
+        train_dict, test_dict, stats = _fill_nans(train_dict, test_dict, stats, only_categorical=True)
+        train_dict['categorical'], test_dict['categorical'], stats['categorical'] =\
+            _combine_categorical(train_dict['categorical'], test_dict['categorical'], stats['categorical'])
+        train_dict['categorical']['Response'] = train_dict['response']
+        for col in train_dict['categorical']:
+            print(col)
+            if col == 'Response':
+                continue
+            selected = train_dict['categorical'][[col, 'Response']]
+            selected_test = test_dict['categorical'][[col]]
+            mean_response = selected.groupby(col)['Response'].mean().reset_index()
+            x = pd.merge(selected, mean_response, suffixes=('x_', ''), how='left', on=col, left_index=True)['Response']
+            x = x + np.random.normal(0, .0001, x.shape[0])
+            y = pd.merge(selected_test, mean_response, suffixes=('y_', ''), how='left', on=col, left_index=True)['Response']
+            y = y.fillna(x.mean()) + np.random.normal(0, .0001, y.shape[0])
+            train_dict['categorical'].loc[:, col] = x.values
+            test_dict['categorical'].loc[:, col] = y.values
+        train_dict['categorical'] = train_dict['categorical'].drop(['Response'], axis=1)
 
     if fill_nans:
-        train_dict, test_dict, stats = _fill_nans(train_dict, test_dict, stats)
+        train_dict, test_dict, stats = _fill_nans(train_dict, test_dict, stats, only_categorical=False)
 
     all_train_data = pd.concat((train_dict[k] for k in ['categorical', 'date', 'numeric', 'magic']), axis=1)
     all_test_data = pd.concat((test_dict[k] for k in ['categorical', 'date', 'numeric', 'magic']), axis=1)
@@ -1141,42 +1215,97 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
         the_train_data = all_train_data
         the_response = train_dict['response']
 
+    the_test_data = all_test_data
+
+    if correlation_max is not None:
+        corr = np.triu(the_train_data.corr().fillna(0).values, 1)
+        corr_edges = np.array(np.where(np.abs(corr) > correlation_max)).T.ravel()
+        cc = connected_components(len(the_train_data.columns), corr_edges)
+        the_train_data = the_train_data.iloc[:, np.unique(cc)]
+        the_test_data = the_test_data.iloc[:, np.unique(cc)]
+        new_corr = np.triu(the_train_data.corr().fillna(0).values, 1)
+        assert np.all(new_corr <= correlation_max)
+        print "Kept %i uncorrelated features (out of %i)" % (len(the_train_data.columns), len(corr))
+
+    if minimal_features:
+        the_feats = [# categorical
+                     'L1_S24_F1559', 'L1_S24_F1827', 'L1_S24_F1582', 'L1_S24_F1510', 'L1_S24_F1525',
+                     'L3_S32_F3851', 'L3_S32_F3854',
+                     # date
+                     'L3_S30',
+                     # numeric
+                     'L0_S2_F60', 'L0_S6_F122', 'L0_S10_F224',
+                     'L1_S24_F1604', 'L1_S24_F1632', 'L1_S24_F1695', 'L1_S24_F1723', 'L1_S24_F1846',
+                     'L3_S29_F3407',
+                     'L3_S32_F3850', 'L3_S33_F3855', 'L3_S33_F3865',
+                     'L3_S36_F3859', 'L3_S36_F3920', 'L3_S38_F3952',
+                     # magic
+                     'magic_1', 'magic_2', 'min_date'] + list(train_dict['categorical'].columns)
+        the_present_feats = list(set(the_train_data.columns).intersection(the_feats))
+        the_train_data = the_train_data[the_present_feats]
+        the_test_data = the_test_data[the_present_feats]
+        print "Reduced to %i cols" % len(the_train_data.columns)
+
+    # print the_train_data.count()
     # print("Added %i other positives, resampled positives from %.1f%% to %.1f%%; total samples from %i to %i, %i features" %
     #       (len(other_positives_dict['numeric']), train_dict['response'].mean() * 100, the_response.mean() * 100,
     #        len(all_train_data), len(the_train_data), len(the_train_data.columns)))
-    #
-    the_test_data = all_test_data
+    return the_train_data, the_response, the_test_data
+
+
+def _predict_cluster(train_data, test_data, train_response, test_response, light_mode,
+                     clf_params=None):
+    '''
+    :param train_data, test_data: pd frames ready for classification
+    :param train_response: series corresponding to train_data
+    :param test_response: if not None, test data will be used for validation with this response
+    '''
     # clf = SVC(C=0.05, kernel='linear')
     # clf = LinearSVC(C=0.01, penalty='l1', dual=False, class_weight='balanced')
-    # the_feats = ['L0_S10_F224', 'L0_S6_F122', 'L0_S2_F60'
-    #              'L1_S24_F1846', 'L3_S32_F3850',
-    #              'L1_S24_F1695', 'L1_S24_F1632',
-    #              'L3_S33_F3855', 'L1_S24_F1604',
-    #              'L3_S29_F3407', 'L3_S33_F3865', 'L3_S36_F3920', 'L3_S36_F3859',
-    #              'L3_S38_F3952', 'L1_S24_F1723']
-    # the_present_feats = list(set(the_train_data.columns).intersection(the_feats))
-    # the_train_data = the_train_data[the_present_feats]
-    # the_test_data = the_test_data[the_present_feats]
-    # print "Reduced to %i cols" % len(the_train_data.columns)
     # clf = get_xgb_clf()
 
-    # the_eval_data = xgboost.DMatrix(the_train_data.iloc[::3], the_response.iloc[::3], silent=True,
-    #                                  feature_names=the_train_data.columns)
-    # the_train_data = xgboost.DMatrix(pd.concat((the_train_data.iloc[1::3], the_train_data.iloc[2::3])),
-    #                                  pd.concat((the_response.iloc[1::3], the_response.iloc[2::3])),
-    #                                  silent=True, feature_names=the_train_data.columns)
-    the_train_data = xgboost.DMatrix(the_train_data, the_response,
-                                     silent=True, feature_names=the_train_data.columns)
-    the_test_data = xgboost.DMatrix(the_test_data, silent=True,
-                                    feature_names=the_test_data.columns)
-    # evals_result = {}
-    params = get_xgb_params(light_mode=light_mode)
-    clf = xgboost.train(params, the_train_data,
-                        # evals=[(the_eval_data, 'eval')], early_stopping_rounds=40, feval=mcc_eval, maximize=True, verbose_eval=False, evals_result=evals_result,
-                        num_boost_round=50 if light_mode else 250)
-    # ntree_limit = clf.best_iteration + 1
-    # print "Best iteration:", ntree_limit, evals_result
-    prob = clf.predict(the_test_data)#, ntree_limit=ntree_limit)
+    # the_eval_data_xgb = xgboost.DMatrix(the_train_data.iloc[::3], the_response.iloc[::3], silent=True,
+    #                                     feature_names=the_train_data.columns)
+    # the_train_data_xgb = xgboost.DMatrix(pd.concat((the_train_data.iloc[1::3], the_train_data.iloc[2::3])),
+    #                                      pd.concat((the_response.iloc[1::3], the_response.iloc[2::3])),
+    #                                      silent=True, feature_names=the_train_data.columns)
+    train_data_xgb = xgboost.DMatrix(train_data, train_response,
+                                     silent=True, feature_names=train_data.columns)
+    test_data_xgb = xgboost.DMatrix(test_data, test_response, silent=True,
+                                    feature_names=test_data.columns)
+
+    if test_response is not None:
+        best_score = -1e9
+        best = None
+        evals_result = {}
+        evals = [(train_data_xgb, 'train'), (test_data_xgb, 'eval')]
+        param_generator = xgb_params_generator(test_data.shape)
+        if clf_params is None:
+            all_params = [pp for pp in param_generator]
+        else:
+            all_params = [clf_params]
+        for params, nrounds in all_params:
+            clf = xgboost.train(params, train_data_xgb,
+                                evals=evals,
+                                # early_stopping_rounds=50,
+                                feval=mcc_eval,# maximize=True,
+                                verbose_eval=nrounds / 10,
+                                evals_result=evals_result,
+                                num_boost_round=nrounds)
+            # ntree_limit = clf.best_iteration + 1
+            prob = clf.predict(test_data_xgb)#, ntree_limit=ntree_limit)
+            score, best_p, (TP, TN, FP, FN) = best_mcc(test_response.values.ravel(), prob)
+            if score > best_score:
+                best_score = score
+                best = prob, (params, nrounds)#, ntree_limit)
+        return best
+    else:
+        assert clf_params is not None
+        clf = xgboost.train(clf_params[0], train_data_xgb,
+                            num_boost_round=clf_params[1])
+        prob = clf.predict(test_data_xgb)#, ntree_limit=clf_params[2] * 2)
+        return prob, None
+
 
     # clf = RandomForestClassifier(n_estimators=500, criterion='gini', max_depth=12,
     #                              max_features=min(len(the_train_data.columns), int(4 * np.sqrt(len(the_train_data.columns)))),
@@ -1194,28 +1323,37 @@ def _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode,
     # clf2 = RadiusNeighborsClassifier()
     # fi = clf.feature_importances_
     # clf2.fit(the_train_data * fi, the_response)
-    return prob
+    # return prob
 
 
-def  cross_eval(train_dict, other_positives_dict, light_mode, verbose):
-    kf = KFold(len(train_dict['response']), n_folds=5)
-    remove_absent = True
-    remove_invariant = True
+def cross_eval(train_data, train_response, light_mode, verbose):
+    kf = KFold(len(train_response), n_folds=5, shuffle=True, random_state=0)
     pd.options.display.float_format = '{:,.2f}'.format
     all_prob = np.array([])
     all_results = np.array([])
+    clf_params = None
     for train, test in kf:
-        train_chunk_dict = {k: train_dict[k].iloc[train] for k in train_dict.keys()}
-        validation_dict = {k: train_dict[k].iloc[test] for k in train_dict.keys()}
-        prob = _predict_cluster(train_chunk_dict, validation_dict, other_positives_dict, light_mode=light_mode,
-                                remove_absent=remove_absent, remove_invariant=remove_invariant)
+        gc.collect()
+        train_chunk = train_data.iloc[train]
+        train_chunk_response = train_response.iloc[train]
+        validation_data = train_data.iloc[test]
+        validation_response = train_response.iloc[test]
+        prob, best_params = _predict_cluster(train_chunk, validation_data, train_chunk_response, validation_response,
+                                             light_mode=light_mode,
+                                             clf_params=clf_params)
+        if clf_params is None:
+            print "best params:", best_params
+            clf_params = best_params[:2]
+            # ntree_limit = best_params[2]
+        # else:
+        #     ntree_limit = max(ntree_limit, best_params[2])
         all_prob = np.append(all_prob, prob)
-        all_results = np.append(all_results, validation_dict['response'].values.ravel())
-        score, best_p, (TP, TN, FP, FN) = best_mcc(validation_dict['response'].values.ravel(), prob)
+        all_results = np.append(all_results, validation_response.values.ravel())
+        score, best_p, (TP, TN, FP, FN) = best_mcc(validation_response.values.ravel(), prob)
         if verbose:
-            print "Score: %.3f, best_p: %.4f, positives %i, true %i, false %i" % (score, best_p, np.sum(validation_dict['response']), TP, FP)
+            print "Score: %.3f, best_p: %.4f, positives %i, true %i, false %i" % (score, best_p, np.sum(validation_response), TP, FP)
     score, best_p, (TP, TN, FP, FN) = best_mcc(all_results, all_prob)
-    return score, best_p, (TP, TN, FP, FN)
+    return score, best_p, (TP, TN, FP, FN), clf_params# + (ntree_limit, )
 
 
 def append_results(filepath, frame, index):
@@ -1224,19 +1362,100 @@ def append_results(filepath, frame, index):
         frame.to_csv(f, sep=',', header=not exists, na_rep='', index=index)
 
 
+def main_one_block():
+    timestr = time.strftime('%y%m%d_%H%M%S', time.localtime())
+    results_path = os.path.join('blockresults_' + timestr + '.csv')
+    # train_magic = pd.read_csv("/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_magic.csv",
+    #                           header=0, sep=',').set_index('Id')
+    # test_magic = pd.read_csv("/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/test_magic.csv",
+    #                          header=0, sep=',').set_index('Id')
+    # nchunks = 300
+    # chunksize = 5000
+    # all_responses = []
+    # all_data = {}
+    # the_feats = [# categorical
+    #              'L1_S24_F1559', 'L1_S24_F1827', 'L1_S24_F1582', 'L1_S24_F1510', 'L1_S24_F1525',
+    #              'L3_S32_F3851', 'L3_S32_F3854',
+    #              # date
+    #              'L3_S30',
+    #              # numeric
+    #              'L0_S2_F60', 'L0_S6_F122', 'L0_S10_F224',
+    #              'L1_S24_F1604', 'L1_S24_F1632', 'L1_S24_F1695', 'L1_S24_F1723', 'L1_S24_F1846',
+    #              'L3_S29_F3407',
+    #              'L3_S32_F3850', 'L3_S33_F3855', 'L3_S33_F3865',
+    #              'L3_S36_F3859', 'L3_S36_F3920', 'L3_S38_F3952']
+    # keys = ['categorical', 'date', 'numeric']
+    # for split in ['test', 'train']:
+    #     all_data[split] = None
+    #     paths = ["/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/" + split + ("_%s.csv" % (k, ))
+    #              for k in keys]
+    #     readers = [pd.read_table(p, chunksize=chunksize, header=0, sep=',') for p in paths]
+    #     i = 0
+    #     for chunks in itertools.izip(*readers):
+    #         chunks = {k: c.set_index('Id') for k, c in zip(keys, chunks)}
+    #         if split == 'train':
+    #             all_responses.append(chunks['numeric']['Response'])
+    #             chunks['numeric'] = chunks['numeric'].drop(['Response'], axis=1)  # every record has response, do not use it for grouping
+    #         # assert chunks['categorical'].index.equals(chunks['date'].index)
+    #         # assert chunks['categorical'].index.equals(chunks['numeric'].index)
+    #         for k, c in chunks.iteritems():
+    #             the_present_feats = list(set(c.columns).intersection(the_feats))
+    #             chunks[k] = c[the_present_feats]
+    #         if all_data[split] is None:
+    #             all_data[split] = chunks
+    #         else:
+    #             for k, c in chunks.iteritems():
+    #                 all_data[split][k] = pd.concat((all_data[split][k], c), axis=0)
+    #         i += 1
+    #         print split, i
+    #         if i == nchunks:
+    #             break
+    #
+    # train_dict = all_data['train']
+    # test_dict = all_data['test']
+    # train_dict['magic'] = train_magic.loc[train_dict['date'].index]
+    # test_dict['magic'] = test_magic.loc[test_dict['date'].index]
+    # train_dict['response'] = pd.DataFrame(pd.concat(all_responses))
+    # print("Processing, n_records=%i" % (len(train_dict['categorical']), ))
+    # processed_train, processed_response, processed_test = _preprocess_data(train_dict, test_dict)
+    # gc.collect()
+
+    # processed_train.to_csv("block_processed_train.csv", sep=',', header=True, na_rep='')
+    # processed_test.to_csv("block_processed_test.csv", sep=',', header=True, na_rep='')
+    # processed_response.to_csv("block_processed_response.csv", sep=',', header=True, na_rep='')
+    # assert False
+
+    processed_train = pd.read_csv("block_processed_train.csv", header=0, sep=',').set_index('Id')
+    processed_test = pd.read_csv("block_processed_test.csv", header=0, sep=',').set_index('Id')
+    processed_response = pd.read_csv("block_processed_response.csv", header=0, sep=',').set_index('Id')
+
+    # processed_train = processed_train.iloc[::10, :]
+    # processed_response = processed_response.iloc[::10, :]
+
+    score, best_p, (all_TP, all_TN, all_FP, all_FN), clf_params = cross_eval(processed_train, processed_response, light_mode=True, verbose=True)
+    print "Now the real thing, score %.3f, best_p=%.3f, params=%s, doing the test data..." % (score, best_p, clf_params)
+    # prob, best_params = _predict_cluster(processed_train, processed_test, processed_response, None,
+    #                                      light_mode=False, clf_params=clf_params)
+    # append_results(results_path, pd.DataFrame(data={'Response': (prob > best_p).astype(np.int)}, index=test_dict['numeric'].index), index=True)
+    # print "Saved test and excluded data!"
+
+    print "Final score:", ((all_TP * all_TN) - (all_FP * all_FN)) /\
+                          np.sqrt(1e-12 + (all_TP + all_FP) * (all_TP + all_FN) * (all_TN + all_FP) * (all_TN + all_FN))
+
+
 def main():
-    dirname = 'clustereddata_300_clean'
+    dirname = 'clustereddata_50_clean'
     timestr = time.strftime('%y%m%d_%H%M%S', time.localtime())
     results_path = os.path.join(dirname, 'results_' + timestr + '.csv')
     exclude_path = os.path.join(dirname, 'excluded_' + timestr + '.csv')
     all_positives = {}
-    with open('positives.pkl', 'r') as f:
-        all_positives['categorical'], all_positives['date'], all_positives['numeric'] = cPickle.load(f)
+    # with open('positives.pkl', 'r') as f:
+    #     all_positives['categorical'], all_positives['date'], all_positives['numeric'] = cPickle.load(f)
     train_magic = pd.read_csv("/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/train_magic.csv",
                               header=0, sep=',').set_index('Id')
     test_magic = pd.read_csv("/media/psf/Home/linux-home/Borja/Cursos/kaggle/bosch/test_magic.csv",
                              header=0, sep=',').set_index('Id')
-    all_positives['magic'] = train_magic.loc[all_positives['date'].index]
+    # all_positives['magic'] = train_magic.loc[all_positives['date'].index]
 
     all_files = os.listdir(dirname)
     train_files = {}
@@ -1249,7 +1468,7 @@ def main():
     all_idx = np.argsort(sizes)[::-1]  # biggest first
     all_TP = all_TN = all_FP = all_FN = 0
     tot_records = 0
-    for idx in all_idx[0:300]:
+    for idx in all_idx[:]:
         cc = train_files['numeric'][idx][-10:-4]
         train_dict = {}
         test_dict = {}
@@ -1263,18 +1482,20 @@ def main():
         test_dict['magic'] = test_magic.loc[test_dict['date'].index]
         tot_records += len(train_dict['categorical'])
         print("Processing %s, size=%i, n_records=%i" % (cc, sizes[idx], len(train_dict['categorical'])))
-        others = ~all_positives['categorical'].index.isin(train_dict['categorical'].index)
-        other_positives_dict = {k: all_positives[k].loc[others, train_dict[k].columns] for k in all_positives.keys()}
+        # others = ~all_positives['categorical'].index.isin(train_dict['categorical'].index)
+        # other_positives_dict = {k: all_positives[k].loc[others, train_dict[k].columns] for k in all_positives.keys()}
         # print("Kept %i extra positives out of %i" % (len(other_positives['categorical']), len(all_positives['categorical'])))
+        processed_train, processed_response, processed_test = _preprocess_data(train_dict, test_dict)
+        gc.collect()
 
-        score, best_p, (TP, TN, FP, FN) = cross_eval(train_dict, other_positives_dict, light_mode=True, verbose=False)
-        if score > 0.1:
-            print "Going heavy here, got a score of %.3f..." % (score, )
-            score, best_p, (TP, TN, FP, FN) = cross_eval(train_dict, other_positives_dict, light_mode=False, verbose=False)
-            if score > 0.3:
-                print "This is the real thing, score %.3f, best_p=%.3f, doing the test data..." % (score, best_p)
-                prob = _predict_cluster(train_dict, test_dict, other_positives_dict, light_mode=False,
-                                        remove_absent=True, remove_invariant=True)
+        score, best_p, (TP, TN, FP, FN), clf_params = cross_eval(processed_train, processed_response, light_mode=True, verbose=True)
+        if score > -1e9:
+        #     print "Going heavy here, got a score of %.3f..." % (score, )
+        #     score, best_p, (TP, TN, FP, FN) = cross_eval(train_dict, other_positives_dict, light_mode=False, verbose=False)
+        #     if score > 0.3:
+                print "This is the real thing, score %.3f, best_p=%.3f, params=%s, doing the test data..." % (score, best_p, clf_params)
+                prob, best_params = _predict_cluster(processed_train, processed_test, processed_response, None,
+                                                     light_mode=False, clf_params=clf_params)
                 append_results(results_path, pd.DataFrame(data={'Response': (prob > best_p).astype(np.int)}, index=test_dict['numeric'].index), index=True)
                 append_results(exclude_path, pd.Series(train_dict['numeric'].index), index=False)
                 print "Saved test and excluded data for cluster %s!" % (cc, )
@@ -1287,6 +1508,7 @@ def main():
         print "Cum records:", tot_records, "Cumulative score:", ((all_TP * all_TN) - (all_FP * all_FN)) /\
             np.sqrt(1e-12 + (all_TP + all_FP) * (all_TP + all_FN) * (all_TN + all_FP) * (all_TN + all_FN))
         print
+        gc.collect()
 
     print "Final score:", ((all_TP * all_TN) - (all_FP * all_FN)) /\
                           np.sqrt(1e-12 + (all_TP + all_FP) * (all_TP + all_FN) * (all_TN + all_FP) * (all_TN + all_FN))
@@ -1296,10 +1518,11 @@ if __name__ == "__main__":
     # make_magic_features()
     # save_all_positives('kk.pkl')
     # compute_feature_sets('new_sets.pkl')
-    # cluster_maxisets('maxisets_200_round2.pkl', 300, exclude_files=(os.path.join('clustereddata_300_clean/excluded_161024_152759.csv'),
+    # cluster_maxisets('maxisets_50.pkl', 50)
+    # cluster_maxisets('maxisets_50_round2.pkl', 50, exclude_files=(os.path.join('clustereddata_300_clean/excluded_161024_152759.csv'),
     #                                                                 os.path.join('clustereddata_300_clean/results_161024_152759.csv')))
-
-    # distribute_data_in_clusters('maxisets_200_round2.pkl')
+    #
+    # distribute_data_in_clusters('maxisets_50_round2.pkl')
 
     # clean_categorical()
     # examine_date()
@@ -1309,7 +1532,7 @@ if __name__ == "__main__":
     # clean_numeric_by_hash()
     # clean_date_by_hash()
 
-    main()
+    main_one_block()
     # import cProfile, pstats
     # profiler = cProfile.Profile()
     # try:
