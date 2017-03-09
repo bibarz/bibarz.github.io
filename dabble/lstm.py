@@ -111,6 +111,7 @@ def sample(prediction, temperature, n=1, repeat=True):
     temperature = max(temperature, 1e-9)
     log_prob = np.log(np.maximum(prediction, 1e-9))
     log_prob /= temperature
+    log_prob -= np.amax(log_prob)
     prediction = np.exp(log_prob)
     prediction /= np.sum(prediction, axis=1)
     p = np.zeros_like(prediction)
@@ -442,7 +443,7 @@ def load_and_write(folder, instance_filename, start_sentence, temperature):
     with tf.Session(graph=model['graph']) as session:
         model['saver'].restore(session, os.path.join(folder, instance_filename))
         seed = initialization_dict['encoder'].char2id(np.fromstring(start_sentence, dtype=np.uint8))
-        writer = text_generator(session, model, initialization_dict['encoder'], seed, temperature, depth=50, n_samples=100)
+        writer = text_generator(session, model, initialization_dict['encoder'], seed, temperature, depth=5, n_samples=40)
         for l in range(100):
             for _ in range(80):
                 sys.stdout.write(writer.next())
@@ -488,4 +489,4 @@ if __name__ == "__main__":
         print "=" * 80
         load_and_write(full_folder, instance,
                        'Oscuro y tormentoso se presentaba el reinado de Witiza',
-                       0.5)
+                       0.1)
