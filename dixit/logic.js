@@ -1,5 +1,5 @@
 var debug = true;
-var is_chief = navigator.userAgent.indexOf("Chrome") == -1;
+var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 var the_gs = null;
 
 var diffusion_params = {
