@@ -1,0 +1,62 @@
+html {
+	height: 100%;
+	margin: 0;
+}
+body {
+	height: 100%;
+	margin: 0;
+}
+
+div.hand {
+	height: 20%;
+	margin: 0;
+}
+
+.hand img {
+	width: 10%;
+	float: left;
+	margin: 1%;
+}
+
+div.candidates {
+	height: 20%;
+	margin: 0;
+}
+
+.candidates img {
+	width: 10%;
+	float: left;
+	margin: 1%;
+}
+
+.candidate_players p {
+	width: 10%;
+	float: left;
+	margin: 1%;
+	text-align: center;
+}
+
+.scoreboard td {
+	width: 10%;
+	text-align: center;
+}
+
+
+.song {
+	width: 80%;
+	margin: auto;
+}
+
+#song_textbox {
+	width: 60%;
+	float: left;
+	margin: 1%;
+}
+
+.song img {
+	width: 35%;
+	float: right;
+	margin: 1%;
+}
+
+
