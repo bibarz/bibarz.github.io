@@ -273,19 +273,24 @@ var display = function(session, gs, player_name) {
 	console.log((100 / gs.cards_per_player - 2) + "%");
 	for (i=gs.player_hands[player_idx].length; i<$(".hand img").length; i++) {
 		$(".hand img").eq(i).hide().attr("src", "");
-	}	
+	}
 	$(".hand img").off('mouseenter').off('mouseLeave').off('click');
 	if((gs.stage==0 && gs.turn==player_idx) || (gs.stage==2 && gs.turn!=player_idx)) {
 		$(".hand img")
-			.on('mouseenter', bigger_size)
-			.on('mouseleave',restore_size)
+			// .on('mouseenter', bigger_size)
+			// .on('mouseleave',restore_size)
 			.on('click',function(){
-			pub_command(session, {
-				name: "propose",
-				arg_1: player_idx,
-				arg_2: $(".hand img").index($(this)),
+				idx_in_hand = $(".hand img").index($(this));
+				card_id = gs.player_hands[player_idx][idx_in_hand];
+				$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
+				$(".song #propose").text("Proponer esta").on("click", function() {
+					pub_command(session, {
+						name: "propose",
+						arg_1: player_idx,
+						arg_2: idx_in_hand,
+					});
+				}).show();
 			})
-		});
 	}
 	
 	// Song
@@ -315,6 +320,7 @@ var display = function(session, gs, player_name) {
 		}
 		$(".song img").hide().attr("src", "");
 		$(".song input").hide();
+		$(".song button").hide();
 	} else {
 		$(".song img").hide().attr("src", "");
 		$(".song p").text(gs.player_names[gs.turn] + " ha dicho: " + gs.song);
@@ -351,7 +357,7 @@ var display = function(session, gs, player_name) {
 	} else if (gs.stage >= 3) {
 		for (i=0; i<gs.candidates.length; i++) {
 			$(".candidates img").eq(i).show()
-				.attr("src", "img/Img_"+(gs.candidates[i]+1)+".jpg")
+				.attr("src", "img/Img_"+(gs.candidates_shown[i]+1)+".jpg")
 				.css("width", (100 / gs.cards_per_player - 2) + "%");
 		}
 		for (i=gs.candidates.length; i<$(".candidates img").length; i++) {
@@ -363,14 +369,19 @@ var display = function(session, gs, player_name) {
 		} else if (gs.stage == 3) {
 			$(".candidate_text p").show().text("Estas son las propuestas, hora de votar.");
 			$(".candidates img")
-				.on('mouseenter', bigger_size)
-				.on('mouseleave', restore_size)
+				// .on('mouseenter', bigger_size)
+				// .on('mouseleave', restore_size)
 				.on('click',function(){
-				pub_command(session, {
-					name: "vote",
-					arg_1: player_idx,
-					arg_2: gs.candidates[$(".candidates img").index($(this))],
-				})
+					idx_in_proposals = $(".candidates img").index($(this));
+					card_id = gs.candidates_shown[idx_in_proposals];
+					$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
+					$(".song #propose").text("Votar esta").on("click", function() {
+						pub_command(session, {
+							name: "vote",
+							arg_1: player_idx,
+							arg_2: card_id,
+						})
+				}).show();
 			});
 		} else {  // stage 4
 			$(".candidate_text p").show().text("Y estos son los resultados.");

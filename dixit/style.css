@@ -2,6 +2,7 @@ html {
 	height: 100%;
 	margin: 0;
 }
+
 body {
 	height: 100%;
 	margin: 0;
@@ -12,15 +13,34 @@ div.hand {
 	margin: 0;
 }
 
-.hand img {
-	width: 10%;
-	float: left;
-	margin: 1%;
+div.song {
+	height: 30%;
+	margin: 0;
+}
+
+div.candidate_text {
+	height: 5%;
+	margin: 0;
+}
+
+div.candidate_players {
+	height: 5%;
+	margin: 0;
 }
 
 div.candidates {
 	height: 20%;
 	margin: 0;
+}
+
+div.scoreboard {
+	height: 15%;
+}
+
+.hand img {
+	width: 10%;
+	float: left;
+	margin: 1%;
 }
 
 .candidates img {
