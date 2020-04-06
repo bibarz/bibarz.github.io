@@ -210,7 +210,7 @@ var GameState = function(n_cards, player_names) {
 		var mano_votes = 0;
 		for (var i = 0; i < this.n_players; i++) {
 			if (i == this.turn) continue;
-			candidate_idx = this.candidates.indexOf(this.votes[i])
+			var candidate_idx = this.candidates.indexOf(this.votes[i]);
 			if (candidate_idx == -1) {
 				throw ("Vote for non-existing candidate, candidates are " + this.candidates + 
 					   ", votes are " + this.votes);
@@ -228,6 +228,10 @@ var GameState = function(n_cards, player_names) {
 			for (var i = 0; i < this.n_players; i++) {
 				if (i == this.turn) continue;
 				this.scores[i] += 2;
+				var candidate_idx = this.candidates.indexOf(this.votes[i]);
+				if (candidate_idx == this.turn) {
+					this.scores[i] -= 3;  // undo the guess score, everyone guessed
+				}
 			}
 		}		
 		this.stage = 4;  // show results
