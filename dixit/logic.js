@@ -291,7 +291,8 @@ var display = function(session, gs, player_name) {
 	}
 	
 	// Song
-	$(".song p.propose").stop().hide();
+	$(".song p.propose").stop().off('click').hide();
+	$(".song img").off('click');
 	if (gs.stage == 0 && player_idx == gs.turn) {
 		card_id = gs.candidates[player_idx];
 		if (card_id >= 0) {
