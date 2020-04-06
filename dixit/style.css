@@ -40,13 +40,15 @@ div.scoreboard {
 .hand img {
 	width: 10%;
 	float: left;
-	margin: 1%;
+	margin: 0;
+	padding: 1%;
 }
 
 .candidates img {
 	width: 10%;
 	float: left;
-	margin: 1%;
+	margin: 0;
+	padding: 1%;
 }
 
 .candidate_players p {
@@ -67,7 +69,7 @@ div.scoreboard {
 	margin: auto;
 }
 
-#song_textbox {
+div.song_left {
 	width: 60%;
 	float: left;
 	margin: 1%;
@@ -78,4 +80,12 @@ div.scoreboard {
 	float: right;
 	margin: 1%;
 }
+
+.song p.propose {
+	position: absolute;
+	bottom: 50%;
+	left: 50%;
+	text-align: center;
+}
+
 

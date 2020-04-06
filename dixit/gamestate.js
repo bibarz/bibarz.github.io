@@ -36,6 +36,16 @@ var GameState = function(n_cards, player_names) {
 	this.candidates_shown = [];
 	this.votes = [];
 	this.scores = [];
+    // refresh is not really a state but a message field. When we do
+	// a state update that does not require refreshing (e.g., a proposal),
+	// we still must publish it, it is not enough that the chief keeps
+	// track of the change, because if the chief reloads, it will get the
+	// state from the topic and forget about the non-refresh state change.
+	// So we always publish the new state, but the topic listener checks
+	// the refresh field to decide whether to update the display or not.
+	// (It is slightly tricky because even if refresh=False we need to
+	// display when it is the first message after a reload).
+	this.refresh = true;
 	
 	this.init = function() {
 		if (debug) {
@@ -62,11 +72,9 @@ var GameState = function(n_cards, player_names) {
 			console.log(this.player_hands);
 		}
 
-
 		// Clear state
 		this.candidates.length = 0;
 		this.candidates_shown.length = 0;
-
 		this.votes.length = 0;
 		this.scores.length = 0;
 		for (var i = 1; i <= this.n_players; i++) {
@@ -74,6 +82,7 @@ var GameState = function(n_cards, player_names) {
 			this.votes.push(-1);
 			this.scores.push(0);
 		}
+		return true;  // always refresh
 	}
 	
 	this.next_round = function() {
@@ -94,67 +103,73 @@ var GameState = function(n_cards, player_names) {
 			this.candidates.push(-1);
 			this.votes.push(-1);
 		}
+		return true;  // always refresh
 	}
 	
-	this.propose = function(player_idx, card_idx) {
+	this.propose = function(player_idx, card_id) {
 		if(debug) {
-			console.log("Proposing, player_idx=" + player_idx + ", card_idx=" + card_idx);
+			console.log("Proposing, player_idx=" + player_idx + ", card_id=" + card_id);
 			console.log("Player_hands are:");
 			console.log(this.player_hands);
-
 		}
-		if(card_idx < 0 || card_idx >= this.player_hands[player_idx].length) {
-			throw ("Card index " + card_idx + " out of bounds for player " +
-				   player_idx + " with " + this.player_hands[player_idx].length +
-				   " cards in his hand.");
+		if(this.player_hands[player_idx].indexOf(card_id) == -1) {
+			throw ("Card id " + card_id + " not in player " +
+				   player_idx + "'s hand, " + this.player_hands[player_idx]);
 		}
-		if(this.stage == 0) {  // propuesta del mano
-			if (player_idx != this.turn) {
-				throw ("In stage 0, proposal from player " + player_idx + " while mano is "+ this.turn);
-			}
-			if(this.candidates[player_idx] != -1) {
-				throw ("The mano seems to have proposed twice! Candidate idx was " + this.candidates[player_idx]);
-			}
-			this.candidates[player_idx] = this.player_hands[player_idx][card_idx];
-			this.player_hands[player_idx].splice(card_idx, 1);
-			this.stage = 1;
-		} else if (this.stage == 2) {  // propuestas de los jugadores
-			if (player_idx == this.turn) {
-				throw ("In stage 2, proposal from mano (player " + player_idx + ")");
-			}
-			if(this.candidates[player_idx] == -1) {
-				this.candidates[player_idx] = this.player_hands[player_idx][card_idx];
-				this.player_hands[player_idx].splice(card_idx, 1);
-			} else {  // player has changed his mind
-				var tmp = this.candidates[player_idx]
-				this.candidates[player_idx] = this.player_hands[player_idx][card_idx];
-				this.player_hands[player_idx][card_idx] = tmp;
-			}			
-			if (this.candidates.every( v => v != -1 )) {  // everyone has proposed
-				if(debug) console.log("All players have proposed");
-				this.candidates_shown = shuffle(this.candidates.slice());
-				this.stage = 3;
-			}
-		} else {
+		if ((this.stage != 0) && (this.stage != 2)) {
 			throw "Got a proposal in stage " + this.stage;
-		}	
+		}
+		if(this.stage == 0 && player_idx != this.turn) {
+			throw ("In stage 0, proposal from player " + player_idx +
+				   " while mano is "+ this.turn);
+		}
+		if(this.stage == 2 && player_idx == this.turn) {
+				throw ("In stage 2, proposal from mano (player " + player_idx + ")");
+		}
+
+		this.candidates[player_idx] = card_id;
+
+		if (this.stage == 0 && this.song) {
+			this.stage = 2;
+			return true;
+		}
+		if (this.stage == 2 &&
+			this.candidates.every( v => v != -1 )) {  // everyone has proposed
+			if(debug) console.log("All players have proposed");
+			for (var i=0; i < this.n_players; i++) {
+				var card_idx = this.player_hands[i].indexOf(this.candidates[i]);
+				if (card_idx == -1) throw (
+					"After all players proposed (candidates " + this.candidates +
+					"), found that card id " + card_id + " is not in player " +
+					i + "'s hand, " + this.player_hands[i]);
+				this.player_hands[i].splice(card_idx, 1);
+			}
+			this.candidates_shown = shuffle(this.candidates.slice());
+			this.stage = 3;
+			return true;
+		}
+		return false;
 	}
 	
 	this.sing = function(player_idx, song) {
 		if(debug) {
 			console.log("Player " + player_idx + " sings " + song);
 		}
-		if(this.stage == 1) {  // propuesta del mano
+		if(this.stage == 0) {  // propuesta del mano
 			if (player_idx != this.turn) {
-				throw ("In stage 1, song from player " + player_idx + " while mano is "+ this.turn);
+				throw ("Song from player " + player_idx + " while mano is "+ this.turn);
 			}
 			this.song = song;
-			this.stage = 2;
-		} else {
-			throw "Got a song in stage " + this.stage;
+			if(this.candidates[player_idx] != -1) {
+				this.stage = 2;
+				return true;
+			} else {
+				return false;
+			}
 		}
+		throw "Got a song in stage " + this.stage;
 	}
-	
+
 	this.vote = function(player_idx, card_id) {
 		if(this.stage != 3) { // wrong stage
 			throw "Got a vote in stage " + this.stage;
@@ -184,7 +199,7 @@ var GameState = function(n_cards, player_names) {
 		if (n_votes == this.n_players) {
 			throw "Apparently all players (even the mano) have voted! Votes are " + this.votes;
 		}
-		if (n_votes != this.n_players - 1) return;
+		if (n_votes != this.n_players - 1) return false;
 		
 		// Everyone (save the mano) has voted
 		if (not_voted_idx != this.turn) {
@@ -207,7 +222,7 @@ var GameState = function(n_cards, player_names) {
 				this.scores[candidate_idx] += 1;  // voted for candidate_idx, candidate gets a point
 			}
 		}
-		if (mano_votes > 0 && mano_votes < this.n_players) {
+		if (mano_votes > 0 && mano_votes < this.n_players - 1) {
 			this.scores[this.turn] += 3;  // someone but not everyone guessed, mano wins
 		} else {  // all or none guessed, everyone except mano gets 2 points
 			for (var i = 0; i < this.n_players; i++) {
@@ -216,5 +231,6 @@ var GameState = function(n_cards, player_names) {
 			}
 		}		
 		this.stage = 4;  // show results
+		return true;
 	}
 }

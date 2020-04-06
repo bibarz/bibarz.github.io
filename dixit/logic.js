@@ -1,6 +1,10 @@
 var debug = true;
+// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
 var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
-var the_gs = null;
+var the_gs = null;  // only for chief
+// The first time we get a game state we want to refresh no matter what,
+// so we keep track of that (chief or no chief, both need it)
+var has_gs = false;
 
 var diffusion_params = {
 		host   : 'klander-l102aw.eu.diffusion.cloud',
@@ -44,7 +48,7 @@ var send_player_name = function(session, player_name) {
 	session.topics.updateValue('dixit/player_names',
 							   player_name,
 							   diffusion.datatypes.string());
-	if (!is_chief) subscribe_to_gamestate(session, player_name, false);
+	if (!is_chief) subscribe_to_gamestate(session, player_name);
 	$("div.waiting_for_session").show();
 	$("div.player_name").hide();
 }
@@ -102,9 +106,11 @@ var subscribe_to_gamestate = function(session, player_name) {
 		.addStream('dixit/gamestate', diffusion.datatypes.json())
 		.on('value', function(path, specification, newValue, oldValue) {
 			gs = JSON.parse(newValue.get());
+			var refresh = gs.refresh;
 			if (debug) console.log('Got JSON update for topic: ' + path, gs);
-			display(session, gs, player_name);
-			if (is_chief & !the_gs) {
+			if (refresh || !has_gs) display(session, gs, player_name);
+			has_gs = true;
+			if (is_chief && !the_gs) {
 				the_gs = new GameState(gs.n_cards, gs.player_names);
 				the_gs = Object.assign(the_gs, gs);
 				if (debug) console.log("Subscribing to dixit/command after receiving dixit/gamestate, the_gs is ", the_gs);
@@ -145,8 +151,13 @@ var chief_start_game = function(session) {
 					   new TopicSpecification(TopicType.JSON,
 											  {DONT_RETAIN_VALUE: "true"})).then(function(result) {
         console.log('Added topic: ' + result.topic);
+		// When called from the start button, the chief has the_gs already
+		// and can and should start to listen to commands.
+		// (The alternative is starting from reload, we will get
+		// the gs on the first message after subscribing to dixit/game_state)
 		if (the_gs) {
-			if (debug) console.log("Subscribing to dixit/command on start game, the_gs is " + the_gs);
+			if (debug) console.log("Subscribing to dixit/command " +
+								   "on start game, the_gs is " + the_gs);
 			subscribe_to_command(session, the_gs);
 		}
     }, function(reason) {
@@ -197,55 +208,26 @@ var execute_command = function(session, gs, obj) {
 		console.log("gs is ", gs);
 		console.log("the_gs is ", the_gs);
 	}
+	var refresh = false;
 	if (obj["name"] == "init") {
-		gs.init();
+		refresh = gs.init();
 	}
 	if (obj["name"] == "propose") {
-		gs.propose(obj["arg_1"], obj["arg_2"]);
+		refresh = gs.propose(obj["arg_1"], obj["arg_2"], false);
 	}
 	if (obj["name"] == "sing") {
-		gs.sing(obj["arg_1"], obj["arg_2"]);
+		refresh = gs.sing(obj["arg_1"], obj["arg_2"]);
 	}
 	if (obj["name"] == "vote") {
-		gs.vote(obj["arg_1"], obj["arg_2"]);
+		refresh = gs.vote(obj["arg_1"], obj["arg_2"]);
 	}
 	if (obj["name"] == "next_round") {
-		gs.next_round();
+		refresh = gs.next_round();
 	}
+	gs.refresh = refresh;
 	session.topics.updateValue('dixit/gamestate',
 							   JSON.stringify(gs),
 							   diffusion.datatypes.json());
-}
-
-
-var bigger_size = function() {
-	if (typeof $(this).data('origwidth')=='undefined') {
-		$(this).data('origwidth',$(this).width());
-		$(this).data('origmarginleft',$(this).css("marginLeft"));
-		$(this).data('origmarginright',$(this).css("marginRight"));
-		$(this).data('origmargintop',$(this).css("marginTop"));
-		$(this).data('origmarginbottom',$(this).css("marginBottom"));
-		$(this).data('origzindex',$(this).css("zIndex"));
-		$(this).data('origposition',$(this).css("position"));
-	}
-	$(this).stop().css("position", "absolute").animate({
-		width:"50%",
-		marginLeft:"-12.5%", marginRight:"-12.5%",
-		marginTop:"0%", marginBottom:"-35%",
-		zIndex: 2,
-	});
-}
-
-
-var restore_size = function() {
-	$(this).stop().css("position", $(this).data('origposition')).animate({
-		width:$(this).data('origwidth'),
-		marginLeft:$(this).data('origmarginleft'),
-		marginRight:$(this).data('origmarginright'),
-		marginTop:$(this).data('origmargintop'),
-		marginBottom:$(this).data('origmarginbottom'),
-		zIndex:$(this).data('origzindex'),
-	});
 }
 
 
@@ -253,7 +235,8 @@ var display = function(session, gs, player_name) {
 	$("div.manage").hide();
 	$("div.waiting_for_session").hide();
 	$("div.player_name").hide();
-	player_idx = gs.player_names.indexOf(player_name);
+	var player_idx = gs.player_names.indexOf(player_name);
+	var mano_name = gs.player_names[gs.turn];
 	if (player_idx < 0) {
 		console.error("Couldn't find player name " + player_name + " among names " + gs.player_names);
 	}
@@ -268,62 +251,85 @@ var display = function(session, gs, player_name) {
 	for (i=0; i<gs.player_hands[player_idx].length; i++) {
 		$(".hand img").eq(i).show()
 			.attr("src", "img/Img_"+(gs.player_hands[player_idx][i]+1)+".jpg")
-			.css("width", (100 / gs.cards_per_player - 2) + "%");
+			.css("width", (100 / gs.cards_per_player - 2) + "%")
+			.css("background-color", "");
+		if (gs.player_hands[player_idx][i] == gs.candidates[player_idx]) {
+			$(".hand img").eq(i).css("background-color", "red");
+		}
 	}
 	console.log((100 / gs.cards_per_player - 2) + "%");
 	for (i=gs.player_hands[player_idx].length; i<$(".hand img").length; i++) {
 		$(".hand img").eq(i).hide().attr("src", "");
 	}
-	$(".hand img").off('mouseenter').off('mouseLeave').off('click');
+	$(".hand img").off('click');
 	if((gs.stage==0 && gs.turn==player_idx) || (gs.stage==2 && gs.turn!=player_idx)) {
-		$(".hand img")
-			// .on('mouseenter', bigger_size)
-			// .on('mouseleave',restore_size)
-			.on('click',function(){
-				idx_in_hand = $(".hand img").index($(this));
-				card_id = gs.player_hands[player_idx][idx_in_hand];
-				$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
-				$(".song #propose").text("Proponer esta").on("click", function() {
-					pub_command(session, {
-						name: "propose",
-						arg_1: player_idx,
-						arg_2: idx_in_hand,
-					});
-				}).show();
-			})
+		$(".hand img").on('click',function(){
+			var idx_in_hand = $(".hand img").index($(this));
+			var card_id = gs.player_hands[player_idx][idx_in_hand];
+			var ptext = $(".song p.propose");
+			var propose_this = function() {
+				$(".hand img").css("background-color", "");
+				$(".hand img").eq(idx_in_hand).css("background-color", "red");
+				ptext.stop().hide();
+				pub_command(session, {
+					name: "propose",
+					arg_1: player_idx,
+					arg_2: card_id,
+				});
+			}
+			$(".song img").show()
+				.attr("src", "img/Img_"+(card_id+1)+".jpg")
+				.on("click", propose_this);
+			ptext.show()
+				.text("Elegir esta")
+				.on("click", propose_this);
+			startAnimation();
+			function startAnimation() {
+				ptext.fadeToggle(1000, "swing", startAnimation);
+			}
+		})
 	}
 	
 	// Song
-	if (gs.stage == 1) {
-		if (player_idx == gs.turn) {
-			$(".song img").show().attr("src", "img/Img_"+(gs.candidates[player_idx]+1)+".jpg");
-			$(".song p").text("Ahora di algo:");
-			$(".song input").show().on("keypress",function(e) {
-				if(e.which == 13) {
-					pub_command(session, {
-						name: "sing",
-						arg_1: player_idx,
-						arg_2: $(".song input").val()
-					});
-				}
-			})
+	$(".song p.propose").stop().hide();
+	if (gs.stage == 0 && player_idx == gs.turn) {
+		card_id = gs.candidates[player_idx];
+		if (card_id >= 0) {
+			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
 		} else {
-			$(".song img").attr("src", "");
-			$(".song p").text("Esperando a que " + gs.player_names[gs.turn] + " diga algo");
-			$(".song input").hide();
+			$(".song img").hide().attr("src", "");
 		}
-	} else if (gs.stage == 0) {
-		if (player_idx == gs.turn) {
-			$(".song p").text("Es tu turno, " + gs.player_names[player_idx] + ", elige carta.");
+		$("p.song_caption").text("Tu turno, " + player_name + ", elige carta y di algo.");
+		$(".song input").show().on("keypress",function(e) {
+			if(e.which == 13) {
+				pub_command(session, {
+					name: "sing",
+					arg_1: player_idx,
+					arg_2: $(".song input").val()
+				});
+			}
+		})
+	} else if(gs.stage == 2) {  // show proposal
+		card_id = gs.candidates[player_idx];
+		if (card_id >= 0) {
+			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
 		} else {
-			$(".song p").text("Esperando a que " + gs.player_names[gs.turn] + " elija carta.");
+			$(".song img").hide().attr("src", "");
 		}
-		$(".song img").hide().attr("src", "");
+		$("p.song_caption").text(mano_name + " ha dicho: " + gs.song);
 		$(".song input").hide();
-		$(".song button").hide();
-	} else {
+	} else if(gs.stage == 3) {  // show vote
+		card_id = gs.votes[player_idx];
+		if (card_id >= 0) {
+			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
+		} else {
+			$(".song img").hide().attr("src", "");
+		}
+		$("p.song_caption").text(mano_name + " dijo: " + gs.song);
+		$(".song input").hide();
+	} else if(gs.stage == 0) {  // non-mano
 		$(".song img").hide().attr("src", "");
-		$(".song p").text(gs.player_names[gs.turn] + " ha dicho: " + gs.song);
+		$("p.song_caption").text("Esperando a que " + mano_name + " diga algo");
 		$(".song input").hide();
 	}
 	
@@ -346,42 +352,62 @@ var display = function(session, gs, player_name) {
 	if (gs.stage <= 2) {
 		$(".candidates img").hide().attr("src", "");
 	}
-	if (gs.stage <= 1) {
+	if (gs.stage == 0) {
 		$(".candidate_text p").hide();
 	} else if (gs.stage == 2) {
 		if (player_idx == gs.turn) {
 			$(".candidate_text p").show().html("Esperando a que los dem&aacute;s elijan sus cartas.");
+		} else if (gs.candidates[player_idx] == -1) {
+			$(".candidate_text p").show().text("Elige carta, " + player_name + ".");
 		} else {
-			$(".candidate_text p").show().text("Elige carta, " + gs.player_names[player_idx] + ".");			
+			$(".candidate_text p").show().text("Elegido, pero puedes cambiar si quieres.");
 		}
 	} else if (gs.stage >= 3) {
 		for (i=0; i<gs.candidates.length; i++) {
 			$(".candidates img").eq(i).show()
 				.attr("src", "img/Img_"+(gs.candidates_shown[i]+1)+".jpg")
-				.css("width", (100 / gs.cards_per_player - 2) + "%");
+				.css("width", (100 / gs.cards_per_player - 2) + "%")
+				.css("background-color", "");
+			if (gs.votes[player_idx] == gs.candidates_shown[i]) {
+				$(".candidates img").eq(i).css("background-color", "red");
+			}
 		}
 		for (i=gs.candidates.length; i<$(".candidates img").length; i++) {
 			$(".candidates img").eq(i).hide().attr("src", "");
 		}	
-		$(".candidates img").off('mouseenter').off('mouseLeave').off('click');
-		if (gs.stage == 3 && player_idx == gs.turn) {
-			$(".candidate_text p").show().html("Estas son las propuestas, esperando a los votos.");
-		} else if (gs.stage == 3) {
-			$(".candidate_text p").show().text("Estas son las propuestas, hora de votar.");
-			$(".candidates img")
-				// .on('mouseenter', bigger_size)
-				// .on('mouseleave', restore_size)
-				.on('click',function(){
-					idx_in_proposals = $(".candidates img").index($(this));
-					card_id = gs.candidates_shown[idx_in_proposals];
-					$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
-					$(".song #propose").text("Votar esta").on("click", function() {
+		$(".candidates img").off('click');
+		if (gs.stage == 3) {
+			if (player_idx == gs.turn) {
+				$(".candidate_text p").show().html("Estas son las propuestas, " +
+												   "esperando a los votos.");
+			} else {
+				$(".candidate_text p").show().text("Estas son las propuestas, hora de votar.");
+			}
+			$(".candidates img").on('click',function(){
+				var idx_in_proposals = $(".candidates img").index($(this));
+				var card_id = gs.candidates_shown[idx_in_proposals];
+				$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
+				if (player_idx != gs.turn) {
+					var ptext = $(".song p.propose");
+					var vote_this = function() {
+						$(".candidates img").css("background-color", "");
+						$(".candidates img").eq(idx_in_proposals).css("background-color", "red");
+						ptext.stop().hide();
 						pub_command(session, {
 							name: "vote",
 							arg_1: player_idx,
 							arg_2: card_id,
-						})
-				}).show();
+						});
+					}
+					ptext.show()
+						.text("Votar esta")
+						.on("click", vote_this);
+					$(".song img").on("click", vote_this);
+					function startAnimation() {
+						ptext.fadeToggle(1000, "swing", startAnimation);
+					}
+					startAnimation();
+				}
 			});
 		} else {  // stage 4
 			$(".candidate_text p").show().text("Y estos son los resultados.");
