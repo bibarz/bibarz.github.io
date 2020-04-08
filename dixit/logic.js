@@ -470,6 +470,7 @@ var display = function(session, gs, player_name) {
 	} else {
 		$(".next_round button").show()
 		.on("click", function() {
+			$(".next_round button").off("click").hide();
 			pub_command(session, {"name": "next_round"});
 		});
 	}
