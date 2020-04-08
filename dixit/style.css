@@ -6,7 +6,7 @@ html {
 body {
 	height: 100%;
 	margin: 0;
-	font-size: 20;
+	font: normal 20px Verdana, Arial, sans-serif;
 }
 
 div.manage_container {
@@ -177,7 +177,6 @@ div.next_round {
 	position: absolute;
 	bottom: 2px;
 	width: 100%;
-	font-size: 20;
 }
 
 .scoreboard td {
