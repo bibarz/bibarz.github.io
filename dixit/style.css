@@ -13,6 +13,7 @@ div.manage_container {
 	width: 100%;
 	margin: 0;
 	padding: 0;
+	font-size: 36px;
 }
 
 div.game_container {
@@ -85,7 +86,7 @@ div.next_round {
 	position: absolute;
 	/* float: left; */
 	margin: 0;
-	padding: 1%;
+	padding: 2px;
 }
 
 .song p.song_caption {
