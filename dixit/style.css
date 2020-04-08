@@ -86,7 +86,7 @@ div.next_round {
 	position: absolute;
 	/* float: left; */
 	margin: 0;
-	padding: 2px;
+	padding: 3px;
 }
 
 .song p.song_caption {
@@ -149,7 +149,7 @@ div.next_round {
 	/* float: left; */
 	/* width: 10%; */
 	margin: 0;
-	padding: 1%;
+	padding: 3px;
 }
 
 .candidates p.proposed {
