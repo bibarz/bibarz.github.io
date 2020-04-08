@@ -321,6 +321,8 @@ var display = function(session, gs, player_name) {
 					arg_1: player_idx,
 					arg_2: card_id,
 				});
+				if (!gs.candidates.every( v => v != -1 ))
+					$(".candidate_text p").show().text("Gracias. Puedes cambiar si quieres.");
 			}
 			$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg")
 				.off("click")
