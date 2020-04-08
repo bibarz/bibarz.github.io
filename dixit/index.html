@@ -6,96 +6,101 @@
 		<script src="https://download.pushtechnology.com/clients/6.4.2/js/diffusion-6.4.2.js"></script>
 	</head>
 	<body>
-		<div class="manage">
-			<button>Start game</button>
-			<p></p>
-		</div>
-		<div class="player_name">
-			<p>Your name:</p>
-			<input type="textbox">
-			<button>Send name</button>
-		</div>
-		<div class="waiting_for_session">
-			<p>Waiting to start game</p>
-		</div>
-
-
-		<div class="hand">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-		</div>
-		
-		<div style="clear:both;"></div>
-		
-		<div class="song">
-			<div class="song_left">
-				<p class="song_caption"></p><input type="textbox">
+		<div class="manage_container">
+			<div class="manage">
+				<button>Start game</button>
+				<p></p>
 			</div>
-			<img src="">
-			<p class="propose"></p>
+			<div class="player_name">
+				<p>Your name:</p>
+				<input type="textbox">
+				<button>Send name</button>
+			</div>
+			<div class="waiting_for_session">
+				<p>Waiting to start game</p>
+			</div>
 		</div>
 
-		<div style="clear:both;"></div>
 
-		<div class="candidate_text">
-			<p></p>
+		<div class="game_container">
+			<div class="hand">
+				<img src="">
+				<img src="">
+				<img src="">
+				<img src="">
+				<img src="">
+				<img src="">
+			</div>
+
+			<div style="clear:both;"></div>
+
+			<div class="song">
+				<p class="song_caption"></p>
+				<input type="textbox">
+				<p class="song_display"></p>
+			</div>
+
+			<div class="zoom">
+				<img src="">
+				<p></p>
+			</div>
+
+
+			<div style="clear:both;"></div>
+
+			<div class="candidate_text">
+				<p></p>
+			</div>
+
+			<div class="candidates">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="proposed"></p><img src="">
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+				<p class="voted"></p>
+			</div>
+
+			<div style="clear:both;"></div>
+
+			<div class="scoreboard">
+				<table>
+					<tr class="player_names">
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+					</tr>
+
+					<tr class="player_scores">
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+					</tr>
+				</table>
+			</div>
+
+			<div class="next_round">
+				<button>Next round</button>
+			</div>
 		</div>
 
-		<div class="candidate_players">
-			<p></p>
-			<p></p>
-			<p></p>
-			<p></p>
-			<p></p>
-			<p></p>
-		</div>
-
-		<div style="clear:both;"></div>
-
-		<div class="candidates">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-			<img src="">
-		</div>
-
-		<div style="clear:both;"></div>
-
-		<div class="scoreboard">
-			<p>
-			Scoreboard
-			</p>
-			<table>
-				<tr class="player_names">
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-				</tr>
-
-				<tr class="player_scores">
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-				</tr>
-			</table>
-		</div>
-
-		<div class="next_round">
-			<button>Next round</button>
-		</div>
-
+		<script type="text/javascript" src="utils.js"></script>
 		<script type="text/javascript" src="gamestate.js"></script>
 		<script type="text/javascript" src="logic.js"></script>
 	</body>

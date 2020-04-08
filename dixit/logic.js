@@ -44,7 +44,7 @@ var start_button_click_callback = function(session, player_names) {
 
 var send_player_name = function(session, player_name) {
 	if (debug) console.log("Sending player name " + player_name);
-	setCookie("player_name", player_name);
+	setCookie("player_name", player_name, 3600 * 6);
 	session.topics.updateValue('dixit/player_names',
 							   player_name,
 							   diffusion.datatypes.string());
@@ -56,6 +56,8 @@ var send_player_name = function(session, player_name) {
 
 var setup_player_name = function(session) {
 	player_name = getCookie("player_name");
+	$("div.game_container").hide();
+	$("div.manage_container").show();
 	if (!player_name) {
 		if (debug) console.log("No player name registered yet.");
 		$("div.waiting_for_session").hide();
@@ -135,10 +137,6 @@ var subscribe_to_command = function(session, gs) {
 
 
 var chief_start_game = function(session) {
-	$("div.manage").hide();
-	$("div.waiting_for_session").hide();
-	$("div.player_name").hide();
-
 	session.topics.add('dixit/gamestate',
 					   new TopicSpecification(TopicType.JSON)).then(function(result) {
         console.log('Added topic: ' + result.topic);
@@ -164,30 +162,6 @@ var chief_start_game = function(session) {
         console.log('Failed to add topic: ', reason);
 	});
 }
-
-var setCookie = function(cname, cvalue, exp_secs) {
-  var d = new Date();
-  d.setTime(d.getTime() + exp_secs*1000);
-  var expires = "expires="+ d.toUTCString();
-  document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
-}
-
-function getCookie(cname) {
-  var name = cname + "=";
-  var decodedCookie = decodeURIComponent(document.cookie);
-  var ca = decodedCookie.split(';');
-  for(var i = 0; i <ca.length; i++) {
-    var c = ca[i];
-    while (c.charAt(0) == ' ') {
-      c = c.substring(1);
-    }
-    if (c.indexOf(name) == 0) {
-      return c.substring(name.length, c.length);
-    }
-  }
-  return "";
-}
-
 
 var pub_command = function(session, obj) {
 	if (!session) {
@@ -231,10 +205,87 @@ var execute_command = function(session, gs, obj) {
 }
 
 
+var set_hand_size = function(gs, player_idx) {
+	var window_width = $(window).width();
+	var card_height = $("div.hand").height();
+	var card_width = card_height * 11 / 16;
+	card_width = Math.min(
+		card_width,
+		(window_width - card_width) / (gs.player_hands[player_idx].length - 1));
+	for (var i=0; i<gs.player_hands[player_idx].length; i++) {
+		$(".hand img").eq(i).show()
+			.attr("src", "img/Img_"+(gs.player_hands[player_idx][i]+1)+".jpg")
+			.css("left", i * card_width)
+			// .css("width", (100 / gs.cards_per_player - 2) + "%")
+			.css("background-color", "");
+		if (gs.player_hands[player_idx][i] == gs.candidates[player_idx]) {
+			$(".hand img").eq(i).css("background-color", "red");
+		}
+	}
+}
+
+var set_candidates_size = function(gs, player_idx) {
+	var window_width = $(window).width();
+	var card_height = $("div.candidates").height();
+	var card_width = card_height * 11 / 16;
+	card_width = Math.min(
+		card_width,
+		(window_width - card_width) / (gs.n_players - 1));
+	for (var i=0; i<gs.candidates.length; i++) {
+		$(".candidates img").eq(i).show()
+			.attr("src", "img/Img_"+(gs.candidates_shown[i]+1)+".jpg")
+			.css("left", i * card_width)
+			.css("background-color", "");
+		if (gs.votes[player_idx] == gs.candidates_shown[i]) {
+			$(".candidates img").eq(i).css("background-color", "red");
+		}
+		$(".candidates p.proposed").eq(i).css("left", i * card_width).outerWidth(card_width, true);
+	}
+}
+
+var display_voted = function(gs, voted_whom) {
+	var window_width = $(window).width();
+	var card_height = $("div.candidates").height();
+	var card_width = card_height * 11 / 16;
+	card_width = Math.min(
+		card_width,
+		(window_width - card_width) / (gs.n_players - 1));
+	var cum_votes = [];
+	for (var i = 0; i < gs.candidates_shown.length; i++)
+		cum_votes.push(0);
+	var cum_votes_so_far = cum_votes.slice();
+	for (var i=0; i<gs.n_players; i++) {
+		if (voted_whom[i] == -1) continue;
+		cum_votes[voted_whom[i]]++;
+	}
+	console.log("Cum votes:" + cum_votes + ", voted_whom:" + voted_whom);
+	for (var i=0; i<gs.n_players; i++) {
+		idx = voted_whom[i];
+		if (idx == -1) continue;
+		if (gs.candidates_shown[idx] == gs.candidates[gs.turn]) color="blue";
+		else color="red";
+		$(".candidates p.voted").eq(i).show()
+			.text(gs.player_names[i])
+			.css("color", color)
+			.css("left", idx * card_width)
+			.css("top", 0.3 * card_height + 0.7 * card_height * cum_votes_so_far[idx] / cum_votes[idx])
+			.outerWidth(card_width, true);
+		cum_votes_so_far[idx]++;
+	}	
+	for (var i=gs.n_players; i<$(".candidates p.voted").length; i++) {
+		$(".candidates p.voted").eq(i).hide().text("");
+	}
+}
+
+
+
 var display = function(session, gs, player_name) {
-	$("div.manage").hide();
-	$("div.waiting_for_session").hide();
-	$("div.player_name").hide();
+	$("div.manage_container").hide();
+	$("div.game_container").show();
+	$("div.zoom").hide();
+	$(".zoom p").stop().off('click').hide();
+	$(".zoom img").hide().attr("src", "").off('click');
+	$(window).off("resize");
 	var player_idx = gs.player_names.indexOf(player_name);
 	var mano_name = gs.player_names[gs.turn];
 	if (player_idx < 0) {
@@ -248,16 +299,9 @@ var display = function(session, gs, player_name) {
 	}
 	
 	// Cards in hand
-	for (i=0; i<gs.player_hands[player_idx].length; i++) {
-		$(".hand img").eq(i).show()
-			.attr("src", "img/Img_"+(gs.player_hands[player_idx][i]+1)+".jpg")
-			.css("width", (100 / gs.cards_per_player - 2) + "%")
-			.css("background-color", "");
-		if (gs.player_hands[player_idx][i] == gs.candidates[player_idx]) {
-			$(".hand img").eq(i).css("background-color", "red");
-		}
-	}
-	console.log((100 / gs.cards_per_player - 2) + "%");
+	set_hand_size(gs, player_idx);
+	$(window).resize(() => set_hand_size(gs, player_idx));
+	
 	for (i=gs.player_hands[player_idx].length; i<$(".hand img").length; i++) {
 		$(".hand img").eq(i).hide().attr("src", "");
 	}
@@ -266,10 +310,11 @@ var display = function(session, gs, player_name) {
 		$(".hand img").on('click',function(){
 			var idx_in_hand = $(".hand img").index($(this));
 			var card_id = gs.player_hands[player_idx][idx_in_hand];
-			var ptext = $(".song p.propose");
+			var ptext = $(".zoom p");
 			var propose_this = function() {
 				$(".hand img").css("background-color", "");
 				$(".hand img").eq(idx_in_hand).css("background-color", "red");
+				$(".zoom img").hide();
 				ptext.stop().hide();
 				pub_command(session, {
 					name: "propose",
@@ -277,30 +322,29 @@ var display = function(session, gs, player_name) {
 					arg_2: card_id,
 				});
 			}
-			$(".song img").show()
-				.attr("src", "img/Img_"+(card_id+1)+".jpg")
-				.on("click", propose_this);
-			ptext.show()
-				.text("Elegir esta")
-				.on("click", propose_this);
-			startAnimation();
+			$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg")
+				.off("click")
+				.on("click", propose_this)
+				.show();
+			ptext.text("Elegir esta")
+				.off("click")
+				.on("click", propose_this)
+				.show();
+			$("div.zoom").css("top", $("div.candidate_text").offset().top)
+				.height("50%")
+				.show();
 			function startAnimation() {
-				ptext.fadeToggle(1000, "swing", startAnimation);
+				ptext.animate({opacity: 0}, 3000);
+				ptext.animate({opacity: 1}, 3000, startAnimation);
 			}
+			startAnimation();
 		})
 	}
 	
 	// Song
-	$(".song p.propose").stop().off('click').hide();
-	$(".song img").off('click');
 	if (gs.stage == 0 && player_idx == gs.turn) {
-		card_id = gs.candidates[player_idx];
-		if (card_id >= 0) {
-			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
-		} else {
-			$(".song img").hide().attr("src", "");
-		}
 		$("p.song_caption").text("Tu turno, " + player_name + ", elige carta y di algo.");
+		$("p.song_display").hide();
 		$(".song input").show().on("keypress",function(e) {
 			if(e.which == 13) {
 				pub_command(session, {
@@ -311,42 +355,40 @@ var display = function(session, gs, player_name) {
 			}
 		})
 	} else if(gs.stage == 2) {  // show proposal
-		card_id = gs.candidates[player_idx];
-		if (card_id >= 0) {
-			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
-		} else {
-			$(".song img").hide().attr("src", "");
-		}
-		$("p.song_caption").text(mano_name + " ha dicho: " + gs.song);
+		$("p.song_caption").text(mano_name + " ha dicho: ");
+		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 36 });
 		$(".song input").hide();
-	} else if(gs.stage == 3) {  // show vote
-		card_id = gs.votes[player_idx];
-		if (card_id >= 0) {
-			$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");		
-		} else {
-			$(".song img").hide().attr("src", "");
-		}
-		$("p.song_caption").text(mano_name + " dijo: " + gs.song);
+	} else if(gs.stage >= 3) {  // show vote
+		$("p.song_caption").text(mano_name + " dijo: ");
+		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 36 });
 		$(".song input").hide();
 	} else if(gs.stage == 0) {  // non-mano
-		$(".song img").hide().attr("src", "");
 		$("p.song_caption").text("Esperando a que " + mano_name + " diga algo");
+		$("p.song_display").hide();
 		$(".song input").hide();
 	}
 	
 	// Candidate player names
 	if (gs.stage < 4) {
-		$(".candidate_players p").hide().text("");
+		$(".candidates p").hide().text("");
 	} else {
-		for (i=0; i<gs.candidates.length; i++) {
-			$(".candidate_players p").eq(i).show()
-				.text(gs.player_names[gs.candidates.indexOf(gs.candidates_shown[i])])
-				.css("width", (100 / gs.cards_per_player - 2) + "%");
+		for (var i=0; i<gs.candidates_shown.length; i++) {
+			var idx = gs.candidates.indexOf(gs.candidates_shown[i]);
+			var bg_color = (idx == gs.turn) ? "yellow":"white";
+			$(".candidates p.proposed").eq(i).show()
+				.css("background-color", bg_color)
+				.text(gs.player_names[idx]);
 		}
-
-		for (i=gs.candidates.length; i<$(".candidate_players p").length; i++) {
-			$(".candidate_players p").eq(i).hide().text("");
+		for (var i=gs.candidates.length; i<$(".candidates p.proposed").length; i++) {
+			$(".candidates p.proposed").eq(i).hide().text("");
 		}
+		var voted_whom = [];
+		for (var i=0; i < gs.n_players; i++) {
+			if (i != gs.turn) voted_whom.push(gs.candidates_shown.indexOf(gs.votes[i]));
+			else voted_whom.push(-1);
+		}
+		display_voted(gs, voted_whom);
+		$(window).resize(() => display_voted(gs, voted_whom));
 	}
 
 	// Candidates
@@ -364,15 +406,8 @@ var display = function(session, gs, player_name) {
 			$(".candidate_text p").show().text("Elegido, pero puedes cambiar si quieres.");
 		}
 	} else if (gs.stage >= 3) {
-		for (i=0; i<gs.candidates.length; i++) {
-			$(".candidates img").eq(i).show()
-				.attr("src", "img/Img_"+(gs.candidates_shown[i]+1)+".jpg")
-				.css("width", (100 / gs.cards_per_player - 2) + "%")
-				.css("background-color", "");
-			if (gs.votes[player_idx] == gs.candidates_shown[i]) {
-				$(".candidates img").eq(i).css("background-color", "red");
-			}
-		}
+		set_candidates_size(gs, player_idx);
+		$(window).resize(() => set_candidates_size(gs, player_idx));
 		for (i=gs.candidates.length; i<$(".candidates img").length; i++) {
 			$(".candidates img").eq(i).hide().attr("src", "");
 		}	
@@ -387,28 +422,36 @@ var display = function(session, gs, player_name) {
 			$(".candidates img").on('click',function(){
 				var idx_in_proposals = $(".candidates img").index($(this));
 				var card_id = gs.candidates_shown[idx_in_proposals];
-				$(".song img").show().attr("src", "img/Img_"+(card_id+1)+".jpg");
+				if (card_id == gs.candidates[player_idx]) return;
+
+				$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg").show();
+				var ptext = $(".zoom p");
 				if (player_idx != gs.turn) {
-					var ptext = $(".song p.propose");
 					var vote_this = function() {
 						$(".candidates img").css("background-color", "");
 						$(".candidates img").eq(idx_in_proposals).css("background-color", "red");
 						ptext.stop().hide();
+						$("div.zoom").hide();
 						pub_command(session, {
 							name: "vote",
 							arg_1: player_idx,
 							arg_2: card_id,
 						});
 					}
-					ptext.show()
-						.text("Votar esta")
-						.on("click", vote_this);
-					$(".song img").on("click", vote_this);
+					ptext.text("Votar esta")
+						.off("click")
+						.on("click", vote_this)
+						.show();
+					$(".zoom img").off("click").on("click", vote_this);
 					function startAnimation() {
 						ptext.fadeToggle(1000, "swing", startAnimation);
 					}
 					startAnimation();
+				} else {  // let the mano just see the zoomed card
+					$(".zoom img").off("click").on("click", () => {$(".zoom img").hide()});
+					ptext.off("click").hide();
 				}
+				$("div.zoom").css("top", "3%").height("50%").show();
 			});
 		} else {  // stage 4
 			$(".candidate_text p").show().text("Y estos son los resultados.");
@@ -438,6 +481,8 @@ session_promise.catch(error => {alert("Error setting up Diffusion session:" + er
 
 if (is_chief) {
 	if (!getCookie("game_is_on")) {
+		$("div.game_container").hide();
+		$("div.manage_container").show();
 		if (debug) { console.log("Setting up game.");}
 		session_promise.then(setup_game).then(setup_player_name);
 	} else {
