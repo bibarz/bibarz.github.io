@@ -382,19 +382,18 @@ var display = function(session, gs, player_name) {
 		$(".song_form input.the_song").on("focusout", function(event){
 			send_song();
 		});
-	} else if(gs.stage == 1) {  // show proposal
-		$("p.song_caption").text(mano_name + " ha dicho: ");
-		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song_form input.the_song").off("focusout");
-		$(".song_form").off("submit").hide();
-	} else if(gs.stage >= 2) {  // show vote
-		$("p.song_caption").text(mano_name + " dijo: ");
-		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song_form input.the_song").off("focusout");
-		$(".song_form").off("submit").hide();
-	} else if(gs.stage == 0) {  // non-mano
-		$("p.song_caption").text("Esperando a que " + mano_name + " cante");
-		$("p.song_display").hide();
+	} else {
+		if(gs.stage == 1) {  // show proposal
+			$("p.song_caption").text(mano_name + " ha dicho: ");
+			$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
+		} else if(gs.stage >= 2) {  // show vote
+			$("p.song_caption").text(mano_name + " dijo: ");
+			$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
+		} else if(gs.stage == 0) {  // non-mano
+			$("p.song_caption").text("Esperando a que " + mano_name + " cante");
+			$("p.song_display").hide();
+		}
+		$(".song_form input").val("");
 		$(".song_form input.the_song").off("focusout");
 		$(".song_form").off("submit").hide();
 	}
