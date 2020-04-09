@@ -328,6 +328,7 @@ var display = function(session, gs, player_name) {
 					// use the_gs so it is up-to-date even without refresh
 					candidates_so_far += (the_gs.candidates[i] != -1);
 				}
+				console.log("Candidates so far: " + candidates_so_far);
 				pub_command(session, {
 					name: "propose",
 					arg_1: player_idx,
@@ -461,6 +462,7 @@ var display = function(session, gs, player_name) {
 							// use the_gs so it is up-to-date even without refresh
 							votes_so_far += (the_gs.candidates[i] != -1);
 						}
+						console.log("Votes so far: " + votes_so_far);
 						pub_command(session, {
 							name: "vote",
 							arg_1: player_idx,
