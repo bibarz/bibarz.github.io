@@ -475,7 +475,7 @@ var display = function(session, gs, player_name) {
 				$("div.zoom").css("top", "3%").height("50%").show();
 			});
 		} else {  // stage 4
-			$(".candidate_text p").show().text("Y estos son los resultados");
+			$(".candidate_text p").show().text("Resultados");
 		}
 	}
 	
