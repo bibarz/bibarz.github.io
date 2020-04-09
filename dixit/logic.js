@@ -381,7 +381,7 @@ var display = function(session, gs, player_name) {
 		});
 		$(".song_form input.the_song").on("focusout", function(event){
 			send_song();
-		}
+		});
 	} else if(gs.stage == 1) {  // show proposal
 		$("p.song_caption").text(mano_name + " ha dicho: ");
 		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
