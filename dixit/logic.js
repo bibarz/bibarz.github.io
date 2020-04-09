@@ -367,27 +367,36 @@ var display = function(session, gs, player_name) {
 			$("p.song_caption").text("Ahora elige carta");
 		}
 		$("p.song_display").hide();
-		$(".song_form").show().on("submit", function(event){
-			event.preventDefault();
+		var send_song = function() {
 			pub_command(session, {
 				name: "sing",
 				arg_1: player_idx,
 				arg_2: $(".song_form input").val()
 			});
 			$("p.song_caption").text("Ahora elige carta");
+		}
+		$(".song_form").show().on("submit", function(event){
+			event.preventDefault();
+			send_song();
 		});
+		$(".song_form input.the_song").on("focusout", function(event){
+			send_song();
+		}
 	} else if(gs.stage == 1) {  // show proposal
 		$("p.song_caption").text(mano_name + " ha dicho: ");
 		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song_form").hide();
+		$(".song_form input.the_song").off("focusout");
+		$(".song_form").off("submit").hide();
 	} else if(gs.stage >= 2) {  // show vote
 		$("p.song_caption").text(mano_name + " dijo: ");
 		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song_form").hide();
+		$(".song_form input.the_song").off("focusout");
+		$(".song_form").off("submit").hide();
 	} else if(gs.stage == 0) {  // non-mano
 		$("p.song_caption").text("Esperando a que " + mano_name + " cante");
 		$("p.song_display").hide();
-		$(".song_form").hide();
+		$(".song_form input.the_song").off("focusout");
+		$(".song_form").off("submit").hide();
 	}
 	
 	// Candidate player names
