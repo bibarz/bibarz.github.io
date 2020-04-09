@@ -1,10 +1,17 @@
 var debug = true;
 // var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
 var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
-var the_gs = null;  // only for chief
-// The first time we get a game state we want to refresh no matter what,
-// so we keep track of that (chief or no chief, both need it)
-var has_gs = false;
+// the_gs is mainly for chief, it is where it keeps the game state.
+// Non-chiefs use it only for two reasons:
+//    - To detect the first message from dixit/gamestate: so we always display
+//		(otherwise, if we reload the page and the last gamestate is non-refreshing
+//		we would see nothing). the_gs is null on reload, that's how we detect the
+//		first message.
+//	  - For certain callbacks that need the current gamestate, even if there was
+//		no new display to update the callback itself. E.g., the proposing and voting
+//		callbacks that need to know how many people have proposed or voted so far,
+//		but won't see the update because they are non-refreshing.
+var the_gs = null;
 
 var diffusion_params = {
 		host   : 'klander-l102aw.eu.diffusion.cloud',
@@ -107,14 +114,14 @@ var subscribe_to_gamestate = function(session, player_name) {
 	session
 		.addStream('dixit/gamestate', diffusion.datatypes.json())
 		.on('value', function(path, specification, newValue, oldValue) {
+			var is_first = (the_gs === null);
 			gs = JSON.parse(newValue.get());
 			var refresh = gs.refresh;
 			if (debug) console.log('Got JSON update for topic: ' + path, gs);
-			if (refresh || !has_gs) display(session, gs, player_name);
-			has_gs = true;
-			if (is_chief && !the_gs) {
-				the_gs = new GameState(gs.n_cards, gs.player_names);
-				the_gs = Object.assign(the_gs, gs);
+			the_gs = new GameState(gs.n_cards, gs.player_names);
+			the_gs = Object.assign(the_gs, gs);
+			if (refresh || is_first) display(session, gs, player_name);
+			if (is_first && is_chief) {
 				if (debug) console.log("Subscribing to dixit/command after receiving dixit/gamestate, the_gs is ", the_gs);
 				subscribe_to_command(session, the_gs);
 			}
@@ -317,8 +324,10 @@ var display = function(session, gs, player_name) {
 				$(".zoom img").hide();
 				ptext.stop().hide();
 				var candidates_so_far = 0;
-				for (var i=0; i<gs.n_players; i++)
-					candidates_so_far += (gs.candidates[i] != -1);
+				for (var i=0; i<gs.n_players; i++) {
+					// use the_gs so it is up-to-date even without refresh
+					candidates_so_far += (the_gs.candidates[i] != -1);
+				}
 				pub_command(session, {
 					name: "propose",
 					arg_1: player_idx,
@@ -448,8 +457,10 @@ var display = function(session, gs, player_name) {
 						ptext.stop().hide();
 						$("div.zoom").hide();
 						var votes_so_far = 0;
-						for (var i=0; i<gs.n_players; i++)
-							votes_so_far += (gs.candidates[i] != -1);
+						for (var i=0; i<gs.n_players; i++) {
+							// use the_gs so it is up-to-date even without refresh
+							votes_so_far += (the_gs.candidates[i] != -1);
+						}
 						pub_command(session, {
 							name: "vote",
 							arg_1: player_idx,
@@ -475,7 +486,7 @@ var display = function(session, gs, player_name) {
 				$("div.zoom").css("top", "3%").height("50%").show();
 			});
 		} else {  // stage 4
-			$(".candidate_text p").show().text("Resultados");
+			$(".candidate_text p").show().text("Resultados:");
 		}
 	}
 	
