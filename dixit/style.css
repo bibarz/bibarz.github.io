@@ -26,7 +26,7 @@ div.manage_container {
 	width: 90%;
 }
 
-.player_name input {
+.player_name_form input {
 	width: 90%;
 }
 
@@ -112,7 +112,7 @@ div.next_round {
 	text-align: center;
 }
 
-.song input {
+.song_form input.the_song {
 	position: absolute;
 	top: 25%;
 	/* height: 70%; */
@@ -122,6 +122,10 @@ div.next_round {
 	margin: 0;
 	padding: 0;
 	font-size: 40px;
+}
+
+song_form input.invisible {
+	display: none;
 }
 
 .song p.song_display {

@@ -8,15 +8,17 @@
 	<body>
 		<div class="manage_container">
 			<div class="player_name">
-				<p>Your name:</p>
-				<input type="textbox">
-				<button>Send name</button>
+				<p>Tu nombre:</p>
+				<form class="player_name_form" action="#">
+					<input type="textbox">
+					<button type="submit">Enviar nombre</button>
+				</form>
 			</div>
 			<div class="waiting_for_session">
 				<p>Esperando para empezar</p>
 			</div>
 			<div class="manage">
-				<button>Start game</button>
+				<button>Empezar</button>
 				<p></p>
 			</div>
 		</div>
@@ -36,7 +38,10 @@
 
 			<div class="song">
 				<p class="song_caption"></p>
-				<input type="textbox">
+				<form class="song_form" action="#">
+					<input class="the_song" type="textbox" placeholder="la la la...">
+					<input class="invisible" type="submit" value="">
+				</form>
 				<p class="song_display"></p>
 			</div>
 

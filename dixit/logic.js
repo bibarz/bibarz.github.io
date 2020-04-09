@@ -1,6 +1,6 @@
 var debug = true;
-// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
-var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
+// var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 // the_gs is mainly for chief, it is where it keeps the game state.
 // Non-chiefs use it only for two reasons:
 //    - To detect the first message from dixit/gamestate: so we always display
@@ -69,11 +69,9 @@ var setup_player_name = function(session) {
 		if (debug) console.log("No player name registered yet.");
 		$("div.waiting_for_session").hide();
 		$("div.player_name").show();
-		$(".player_name input").on("keypress", function(e) {
-			if(e.which == 13 && $( this ).val()) send_player_name(session, $( this ).val());
-		});
-		$(".player_name button").on("click", function() {
-			if($(".player_name input").val()) send_player_name(session, $(".player_name input").val());
+		$(".player_name_form").on("submit", function(event){
+			event.preventDefault();
+			if($(".player_name_form input").val()) send_player_name(session, $(".player_name_form input").val());
 		});
 	} else {
 		send_player_name(session, player_name);
@@ -365,32 +363,31 @@ var display = function(session, gs, player_name) {
 		if (gs.song == "") {
 			$("p.song_caption").text(player_name + ", elige carta y di algo");
 		} else {
-			$(".song input").val(gs.song);
+			$(".song_form input").val(gs.song);
 			$("p.song_caption").text("Ahora elige carta");
 		}
 		$("p.song_display").hide();
-		$(".song input").show().on("keypress",function(e) {
-			if(e.which == 13) {
-				pub_command(session, {
-					name: "sing",
-					arg_1: player_idx,
-					arg_2: $(".song input").val()
-				});
-				$("p.song_caption").text("Ahora elige carta");
-			}
-		})
+		$(".song_form").show().on("submit", function(event){
+			event.preventDefault();
+			pub_command(session, {
+				name: "sing",
+				arg_1: player_idx,
+				arg_2: $(".song_form input").val()
+			});
+			$("p.song_caption").text("Ahora elige carta");
+		});
 	} else if(gs.stage == 1) {  // show proposal
 		$("p.song_caption").text(mano_name + " ha dicho: ");
 		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song input").hide();
+		$(".song_form").hide();
 	} else if(gs.stage >= 2) {  // show vote
 		$("p.song_caption").text(mano_name + " dijo: ");
 		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
-		$(".song input").hide();
+		$(".song_form").hide();
 	} else if(gs.stage == 0) {  // non-mano
 		$("p.song_caption").text("Esperando a que " + mano_name + " cante");
 		$("p.song_display").hide();
-		$(".song input").hide();
+		$(".song_form").hide();
 	}
 	
 	// Candidate player names
