@@ -27,7 +27,7 @@ var GameState = function(n_cards, player_names) {
 	this.cards_per_player = 6;
 	this.n_cards = n_cards;
 	this.deck_order = [...Array(n_cards).keys()];
-	this.stage = 0;  // 0 - Mano picks card; 1 - Mano sends text; 2 - Players pick cards; 3 - Players vote; 4 - Results
+	this.stage = 0;  // 0 - Mano picks card and text; 1 - Players pick cards; 2 - Votes; 3 - Results
 	this.turn = 0;
 	this.deck_index = 0;
 	this.song = "";
@@ -116,24 +116,24 @@ var GameState = function(n_cards, player_names) {
 			throw ("Card id " + card_id + " not in player " +
 				   player_idx + "'s hand, " + this.player_hands[player_idx]);
 		}
-		if ((this.stage != 0) && (this.stage != 2)) {
+		if (this.stage > 1) {
 			throw "Got a proposal in stage " + this.stage;
 		}
 		if(this.stage == 0 && player_idx != this.turn) {
 			throw ("In stage 0, proposal from player " + player_idx +
 				   " while mano is "+ this.turn);
 		}
-		if(this.stage == 2 && player_idx == this.turn) {
-				throw ("In stage 2, proposal from mano (player " + player_idx + ")");
+		if(this.stage == 1 && player_idx == this.turn) {
+				throw ("In stage 1, proposal from mano (player " + player_idx + ")");
 		}
 
 		this.candidates[player_idx] = card_id;
 
 		if (this.stage == 0 && this.song) {
-			this.stage = 2;
+			this.stage = 1;
 			return true;
 		}
-		if (this.stage == 2 &&
+		if (this.stage == 1 &&
 			this.candidates.every( v => v != -1 )) {  // everyone has proposed
 			if(debug) console.log("All players have proposed");
 			for (var i=0; i < this.n_players; i++) {
@@ -145,7 +145,7 @@ var GameState = function(n_cards, player_names) {
 				this.player_hands[i].splice(card_idx, 1);
 			}
 			this.candidates_shown = shuffle(this.candidates.slice());
-			this.stage = 3;
+			this.stage = 2;
 			return true;
 		}
 		return false;
@@ -161,7 +161,7 @@ var GameState = function(n_cards, player_names) {
 			}
 			this.song = song;
 			if(this.candidates[player_idx] != -1) {
-				this.stage = 2;
+				this.stage = 1;
 				return true;
 			} else {
 				return false;
@@ -171,7 +171,7 @@ var GameState = function(n_cards, player_names) {
 	}
 
 	this.vote = function(player_idx, card_id) {
-		if(this.stage != 3) { // wrong stage
+		if(this.stage != 2) { // wrong stage
 			throw "Got a vote in stage " + this.stage;
 		}
 		if (player_idx == this.turn) {
@@ -234,7 +234,7 @@ var GameState = function(n_cards, player_names) {
 				}
 			}
 		}		
-		this.stage = 4;  // show results
+		this.stage = 3;  // show results
 		return true;
 	}
 }

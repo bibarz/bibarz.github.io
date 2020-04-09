@@ -6,15 +6,28 @@ html {
 body {
 	height: 100%;
 	margin: 0;
-	font: normal 20px Verdana, Arial, sans-serif;
+	font: normal 24px Verdana, Arial, sans-serif;
 }
 
 div.manage_container {
 	height: 100%;
 	width: 100%;
-	margin: 0;
+	margin: 20px;
 	padding: 0;
-	font-size: 36px;
+}
+
+.manage_container * {
+	font-size: 40px;
+	margin-top: 10px;
+	margin-bottom: 10px;
+}
+
+.player_name p {
+	width: 90%;
+}
+
+.player_name input {
+	width: 90%;
 }
 
 div.game_container {
@@ -107,6 +120,8 @@ div.next_round {
 	width: 94%;
 	text-align: center;
 	margin: 0;
+	padding: 0;
+	font-size: 40px;
 }
 
 .song p.song_display {

@@ -30,7 +30,7 @@ function getCookie(cname) {
         var textHeight;
         var textWidth;
         do {
-            ourText.css('font-size', fontSize);
+            ourText.css('fontSize', fontSize);
             textHeight = ourText.height();
             textWidth = ourText.width();
             fontSize = fontSize - 1;

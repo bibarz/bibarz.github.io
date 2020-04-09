@@ -1,6 +1,6 @@
 var debug = true;
-// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
-var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
+// var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 var the_gs = null;  // only for chief
 // The first time we get a game state we want to refresh no matter what,
 // so we keep track of that (chief or no chief, both need it)
@@ -306,7 +306,7 @@ var display = function(session, gs, player_name) {
 		$(".hand img").eq(i).hide().attr("src", "");
 	}
 	$(".hand img").off('click');
-	if((gs.stage==0 && gs.turn==player_idx) || (gs.stage==2 && gs.turn!=player_idx)) {
+	if(gs.stage <= 1) {
 		$(".hand img").on('click',function(){
 			var idx_in_hand = $(".hand img").index($(this));
 			var card_id = gs.player_hands[player_idx][idx_in_hand];
@@ -326,26 +326,33 @@ var display = function(session, gs, player_name) {
 			}
 			$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg")
 				.off("click")
-				.on("click", propose_this)
 				.show();
-			ptext.text("Elegir esta")
-				.off("click")
-				.on("click", propose_this)
-				.show();
+			ptext.off("click").stop();
+			if ((gs.stage==0 && gs.turn==player_idx) || (gs.stage==1 && gs.turn!=player_idx)) {
+				$(".zoom img").on("click", propose_this);
+				ptext.text("Elegir esta").on("click", propose_this).show();
+				function startAnimation() {
+					ptext.animate({opacity: 0}, 3000);
+					ptext.animate({opacity: 1}, 3000, startAnimation);
+				}
+				startAnimation();
+			} else {
+				$(".zoom img").on("click", () => {$(".zoom img").hide()});
+			}
 			$("div.zoom").css("top", $("div.candidate_text").offset().top)
 				.height("50%")
 				.show();
-			function startAnimation() {
-				ptext.animate({opacity: 0}, 3000);
-				ptext.animate({opacity: 1}, 3000, startAnimation);
-			}
-			startAnimation();
 		})
 	}
 	
 	// Song
 	if (gs.stage == 0 && player_idx == gs.turn) {
-		$("p.song_caption").text("Tu turno, " + player_name + ", elige carta y di algo.");
+		if (gs.song == "") {
+			$("p.song_caption").text(player_name + ", elige carta y di algo");
+		} else {
+			$(".song input").val(gs.song);
+			$("p.song_caption").text("Ahora elige carta");
+		}
 		$("p.song_display").hide();
 		$(".song input").show().on("keypress",function(e) {
 			if(e.which == 13) {
@@ -354,24 +361,25 @@ var display = function(session, gs, player_name) {
 					arg_1: player_idx,
 					arg_2: $(".song input").val()
 				});
+				$("p.song_caption").text("Ahora elige carta");
 			}
 		})
-	} else if(gs.stage == 2) {  // show proposal
+	} else if(gs.stage == 1) {  // show proposal
 		$("p.song_caption").text(mano_name + " ha dicho: ");
-		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 36 });
+		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
 		$(".song input").hide();
-	} else if(gs.stage >= 3) {  // show vote
+	} else if(gs.stage >= 2) {  // show vote
 		$("p.song_caption").text(mano_name + " dijo: ");
-		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 36 });
+		$("p.song_display").show().text(gs.song).textfill({ maxFontPixels: 48 });
 		$(".song input").hide();
 	} else if(gs.stage == 0) {  // non-mano
-		$("p.song_caption").text("Esperando a que " + mano_name + " diga algo");
+		$("p.song_caption").text("Esperando a que " + mano_name + " cante");
 		$("p.song_display").hide();
 		$(".song input").hide();
 	}
 	
 	// Candidate player names
-	if (gs.stage < 4) {
+	if (gs.stage < 3) {
 		$(".candidates p").hide().text("");
 	} else {
 		for (var i=0; i<gs.candidates_shown.length; i++) {
@@ -394,12 +402,12 @@ var display = function(session, gs, player_name) {
 	}
 
 	// Candidates
-	if (gs.stage <= 2) {
+	if (gs.stage <= 1) {
 		$(".candidates img").hide().attr("src", "");
 	}
 	if (gs.stage == 0) {
 		$(".candidate_text p").hide();
-	} else if (gs.stage == 2) {
+	} else if (gs.stage == 1) {
 		if (player_idx == gs.turn) {
 			$(".candidate_text p").show().html("Esperando a que los dem&aacute;s elijan sus cartas.");
 		} else if (gs.candidates[player_idx] == -1) {
@@ -407,19 +415,19 @@ var display = function(session, gs, player_name) {
 		} else {
 			$(".candidate_text p").show().text("Elegido, pero puedes cambiar si quieres.");
 		}
-	} else if (gs.stage >= 3) {
+	} else if (gs.stage >= 2) {
 		set_candidates_size(gs, player_idx);
 		$(window).resize(() => set_candidates_size(gs, player_idx));
 		for (i=gs.candidates.length; i<$(".candidates img").length; i++) {
 			$(".candidates img").eq(i).hide().attr("src", "");
 		}	
 		$(".candidates img").off('click');
-		if (gs.stage == 3) {
+		if (gs.stage == 2) {
 			if (player_idx == gs.turn) {
-				$(".candidate_text p").show().html("Estas son las propuestas, " +
-												   "esperando a los votos.");
+				$(".candidate_text p").show().html("Aqu&iacute las propuestas, " +
+												   "esperando votos");
 			} else {
-				$(".candidate_text p").show().text("Estas son las propuestas, hora de votar.");
+				$(".candidate_text p").show().html("Aqu&iacute las propuestas, a votar");
 			}
 			$(".candidates img").on('click',function(){
 				var idx_in_proposals = $(".candidates img").index($(this));
@@ -467,7 +475,7 @@ var display = function(session, gs, player_name) {
 	}
 	
 	// Next round
-	if (gs.stage < 4 || !is_chief) {
+	if (gs.stage < 3 || !is_chief) {
 		$(".next_round button").hide();
 	} else {
 		$(".next_round button").show()
