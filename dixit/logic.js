@@ -453,8 +453,11 @@ var display = function(session, gs, player_name) {
 			$(".candidates img").on('click',function(){
 				var idx_in_proposals = $(".candidates img").index($(this));
 				var card_id = gs.candidates_shown[idx_in_proposals];
-				if (card_id == gs.candidates[player_idx]) return;
-
+				if (card_id == gs.candidates[player_idx]) {
+					$(this).animate({opacity: 0.5}, 200);
+					$(this).animate({opacity: 1}, 200);
+					return;
+				}
 				$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg").show();
 				var ptext = $(".zoom p");
 				if (player_idx != gs.turn) {
@@ -485,7 +488,8 @@ var display = function(session, gs, player_name) {
 						.show();
 					$(".zoom img").off("click").on("click", vote_this);
 					function startAnimation() {
-						ptext.fadeToggle(1000, "swing", startAnimation);
+						ptext.animate({opacity: 0}, 3000);
+						ptext.animate({opacity: 1}, 3000, startAnimation);
 					}
 					startAnimation();
 				} else {  // let the mano just see the zoomed card
