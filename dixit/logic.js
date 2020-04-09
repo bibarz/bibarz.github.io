@@ -42,7 +42,7 @@ var start_button_click_callback = function(session, player_names) {
 		alert("Cannot play with less than 2 players.");
 		return;
 	}
-	the_gs = new GameState(108, player_names)
+	the_gs = new GameState(107, player_names)
 	chief_start_game(session);
 	execute_command(session, the_gs, {"name": "init"});
 	setCookie("game_is_on", true, 3600 * 6);  // game on for 6 hours
