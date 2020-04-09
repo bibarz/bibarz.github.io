@@ -1,6 +1,6 @@
 var debug = true;
-var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
-// var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
+var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 var the_gs = null;  // only for chief
 // The first time we get a game state we want to refresh no matter what,
 // so we keep track of that (chief or no chief, both need it)
