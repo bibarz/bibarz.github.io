@@ -118,7 +118,9 @@ var subscribe_to_gamestate = function(session, player_name) {
 			gs = JSON.parse(newValue.get());
 			var refresh = gs.refresh;
 			if (debug) console.log('Got JSON update for topic: ' + path, gs);
-			the_gs = new GameState(gs.n_cards, gs.player_names);
+			if (is_first) {
+				the_gs = new GameState(gs.n_cards, gs.player_names);
+			}
 			the_gs = Object.assign(the_gs, gs);
 			if (refresh || is_first) display(session, gs, player_name);
 			if (is_first && is_chief) {
@@ -326,7 +328,7 @@ var display = function(session, gs, player_name) {
 				var candidates_so_far = 0;
 				for (var i=0; i<gs.n_players; i++) {
 					// use the_gs so it is up-to-date even without refresh
-					candidates_so_far += (the_gs.candidates[i] != -1);
+					if (the_gs.candidates[i] != -1) candidates_so_far ++;
 				}
 				console.log("Candidates so far: " + candidates_so_far);
 				pub_command(session, {
@@ -431,7 +433,7 @@ var display = function(session, gs, player_name) {
 	} else if (gs.stage >= 2) {
 		set_candidates_size(gs, player_idx);
 		$(window).resize(() => set_candidates_size(gs, player_idx));
-		for (i=gs.candidates.length; i<$(".candidates img").length; i++) {
+		for (var i=gs.candidates.length; i<$(".candidates img").length; i++) {
 			$(".candidates img").eq(i).hide().attr("src", "");
 		}	
 		$(".candidates img").off('click');
@@ -460,9 +462,9 @@ var display = function(session, gs, player_name) {
 						var votes_so_far = 0;
 						for (var i=0; i<gs.n_players; i++) {
 							// use the_gs so it is up-to-date even without refresh
-							votes_so_far += (the_gs.candidates[i] != -1);
+							if (the_gs.votes[i] != -1) votes_so_far ++;
 						}
-						console.log("Votes so far: " + votes_so_far);
+						console.log("Votes so far: " + votes_so_far, " the_gs.votes: " + the_gs.votes);
 						pub_command(session, {
 							name: "vote",
 							arg_1: player_idx,
