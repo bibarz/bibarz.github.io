@@ -22,11 +22,12 @@ var shuffle = function (array) {
 };
 
 var GameState = function(n_cards, player_names) {
+	this.n_images = 107
 	this.n_players = player_names.length;
 	this.player_names = player_names.slice();
 	this.cards_per_player = 6;
 	this.n_cards = n_cards;
-	this.deck_order = [...Array(n_cards).keys()];
+	this.deck_order = [...Array(this.n_images).keys()];
 	this.stage = 0;  // 0 - Mano picks card and text; 1 - Players pick cards; 2 - Votes; 3 - Results
 	this.turn = 0;
 	this.deck_index = 0;
@@ -177,9 +178,9 @@ var GameState = function(n_cards, player_names) {
 		if (player_idx == this.turn) {
 			throw ("Got a vote from the mano player, " + player_idx);
 		}
-		if(card_id < 0 || card_id >= this.n_cards) {
+		if(card_id < 0 || card_id >= this.n_images) {
 			throw ("Card id " + card_id + " out of bounds for deck of " +
-				   this.n_cards + " cards")
+				   this.n_images + " images")
 		}
 		var idx = this.candidates.indexOf(card_id);
 		if(idx == -1) {

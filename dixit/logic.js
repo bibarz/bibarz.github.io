@@ -1,6 +1,6 @@
 var debug = true;
-// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
-var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
+// var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 // the_gs is mainly for chief, it is where it keeps the game state.
 // Non-chiefs use it only for two reasons:
 //    - To detect the first message from dixit/gamestate: so we always display
@@ -505,8 +505,9 @@ var display = function(session, gs, player_name) {
 	
 	// Scoreboard
 	for (i=0; i<gs.n_players; i++) {
-		$(".player_names td").eq(i).text(gs.player_names[i]);
-		$(".player_scores td").eq(i).text(gs.scores[i]);
+		color = (gs.scores[i] >= 30) ? "red":"black";
+		$(".player_names td").eq(i).text(gs.player_names[i]).css("color", color);
+		$(".player_scores td").eq(i).text(gs.scores[i]).css("color", color);
 	}
 	
 	// Next round
