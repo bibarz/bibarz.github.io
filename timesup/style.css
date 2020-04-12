@@ -1,0 +1,214 @@
+body {
+	font: normal 30px Verdana, Arial, sans-serif;
+}
+
+ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+#manage_container h2 {
+	background: #2980b9;
+	color: white;
+	margin: 0;
+	padding: min(2vw,1.5vh);
+	text-transform: uppercase;
+	font-size: min(8vw,6vh);
+	font-weight: normal;
+}
+
+li {
+	background: #fff;
+	min-height: min(10vw,7.5vh);
+	line-height: min(10vw,7.5vh);
+	color: #666;
+	font-size: min(6vw,4.5vh);
+}
+
+li:nth-child(2n){
+	background: #f7f7f7;
+}
+
+span {
+	background: #e74c3c;
+	height: min(10vw,7.5vh);
+	margin-right: min(1.2vw,0.9vh);
+	text-align: center;
+	color: white;
+	width: 0;
+	display: inline-block;
+	transition: 0.2s linear;
+	opacity: 0;
+}
+
+li:hover span, li:active span {
+	width: min(10vw,7.5vh);
+	opacity: 1.0;
+}
+
+#manage_container input {
+	font-size: min(6vw,4.5vh);
+	color: #2980b9;
+	background-color: #f7f7f7;
+	width: 100%;
+	padding: min(2vw,1.5vh)
+	box-sizing: border-box;
+	border: 3px solid rgba(0,0,0,0);
+}
+
+input:focus{
+	background: #fff;
+	border: 3px solid #2980b9;
+	outline: none;
+}
+
+#manage_buttons {
+	width: min(60vw,45vh);
+	margin: 0;
+	text-align: center;
+	position: fixed;
+	bottom: 0;
+	right: 0;
+}
+#manage_container a.btn-xl {
+	margin: min(2vw,1.5vh);
+	padding: min(2vw,1.5vh) min(4vw,3vh);
+    font-size: min(8vw,6vh);
+    border-radius: min(4vw,3vh);
+}
+
+#manage_container p {
+	font-size: min(8vw,6vh);
+}
+
+#manage_container {
+	width: min(80vw,60vh);
+	margin: min(6vw,4vh) auto;
+	background: #f7f7f7;
+	box-shadow: 0 0 3px rgba(0,0,0, 0.1);
+}
+
+#game_container {
+	width: min(80vw,60vh);
+	margin: min(6vw,4vh) auto;
+	background: #f7f7f7;
+	box-shadow: 0 0 3px rgba(0,0,0, 0.1);
+}
+
+#before_round {
+	width: 100%;
+	text-align: center;
+}
+
+#before_round a.btn-xl {
+	margin: 5vh;
+	padding: 2.4vh min(8vw, 8vh);
+    font-size: min(8vw, 8vh);
+    border-radius: 2.4vh;
+}
+
+#stage_number p {
+	margin: 10px;
+	font-size: min(12vw, 9vh);
+}
+
+#last_round_result p {
+	margin: 10px;
+	font-size: min(8vw, 6vh);
+}
+
+#config {
+	position: fixed;
+	bottom: 0;
+	right: 0;
+	font-size: min(8vw, 6vh);
+	margin: 10px;
+	text-align: center;
+	background: #f7f7f7;
+	box-shadow: 0 0 3px rgba(0,0,0, 0.1);
+}
+
+#config #new_game {
+	margin: 1.5vh;
+	padding: 1vh min(3vw, 3vh);
+    font-size: min(4vw, 4vh);
+    border-radius: 1.5vh;
+}
+
+
+#config div {
+	margin: 10px;
+}
+
+#waiting_round {
+	margin: 10px;
+	width: 100%;
+	text-align: center;
+	font-size: 36px;
+}
+
+#in_round {
+	width: 100%;
+	text-align: center;
+}
+
+#in_round a.btn-xl {
+	padding: 3vh min(4vw, 4vh);
+    font-size: min(4.5vw, 4.5vh);
+    border-radius: 1.4vh;
+	margin: 0.3vh;
+}
+
+#in_round a.btn-mysm {
+	padding: 1.2vh min(3vw, 3vh);
+    font-size: min(3vw, 3vh);
+    border-radius: 0.6vh;
+	margin: 0.4vh;
+}
+
+
+.invisible {
+	display: none;
+}
+
+.cards_left_text {
+	text-align: center;
+}
+
+.cards_left_text p {
+	margin: 10px;
+	font-size: min(6vw, 4.5vh);
+}
+
+#clock {
+  height: min(49vw,33vh);
+  width: 100%;
+}
+
+#clock p {
+	text-align: center;
+	font: normal min(16vw,11vh) Verdana, Arial, sans-serif;
+	margin: auto;
+	line-height: min(48vw,32vh);
+	height: min(48vw,32vh);
+	width: min(48vw,32vh);
+	background-color: #7b7;
+	border-radius: 50%;
+}
+
+#card_buttons {
+	width: 100%;
+	text-align: center;
+	vertical-align: middle;
+}
+
+#candidate_text {
+	text-align: center;
+	height: 20vh;
+}
+
+#candidate_text p {
+	margin: 3px;
+	font-size: min(24vw,18vh);
+}

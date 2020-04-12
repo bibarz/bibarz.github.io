@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="style.css">
+		<link href='https://fonts.googleapis.com/css?family=Roboto:400,700,500' rel='stylesheet' type='text/css'>
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+		<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.css">
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+		<script src="https://download.pushtechnology.com/clients/6.4.2/js/diffusion-6.4.2.js"></script>
+	</head>
+	<body>
+		<div id="manage_container">
+			<h2>Lista de cosas</h2>
+			<form action="#">
+				<input type="text" placeholder="E.g. Un canguro superduro">
+				<input class="invisible" type="submit" value="">
+			</form>
+			<ul>
+			</ul>
+			<div id="manage_buttons">
+				<a class="btn btn-xl btn-success" href="#" id="send_cards"><i class="fa fa-paper-plane fa-2x pull-left"></i> Enviar</a>
+				<p></p>
+				<a class="btn btn-xl btn-success" href="#" id="start_game"><i class="fa fa-play fa-2x pull-left"></i> Jugar</a>
+			</div>
+		</div>
+
+		<div id="game_container">
+
+			<div id="before_round">
+				<div id="stage_number">
+					<p></p>
+				</div>
+				<div class="cards_left_text">
+					<p></p>
+				</div>
+				<a class="btn btn-xl btn-success" id="start_round" href="#"><i class="fa fa-ok fa-2x pull-left"></i> Start round</a>
+				<div id="last_round_result">
+					<p></p>
+				</div>
+				<div id="config">
+					<div>
+						<form action="#">
+							<label for="round_time">Tiempo:</label>
+							<input id="round_time" type="text" name="round_time" placeholder="" size=3>
+							<input class="invisible" type="submit" value="">
+						</form>
+					</div>
+					<div>
+						<a class="btn btn-danger" id="new_game" href="#"><i class="fa fa-trash-o fa-sm"></i> Nueva partida</a>
+					</div>
+				</div>
+
+			</div>
+
+			<div id="waiting_round">
+				<p></p>
+			</div>			
+
+			<div id="in_round">
+				<div class="cards_left_text">
+					<p></p>
+				</div>
+
+				<div id="clock">
+					<p></p>
+				</div>
+
+				<div id="candidate_text">
+					<p></p>
+				</div>
+
+				<div id="card_buttons">
+					<div id="good_buttons">
+						<a class="btn btn-success btn-xl" id="correct" href="#"><i class="fa fa-check fa-2x pull-left"></i> Correct</a>
+						<a class="btn btn-warning btn-xl" id="pass" href="#"><i class="fa fa-forward fa-2x pull-left"></i> Pass</a>
+					</div>
+					<div id="danger_buttons">
+							<a class="btn btn-mysm btn-warning" id="cheat" href="#"><i class="fa fa-forward"></i> Cheat</a>
+						<a class="btn btn-mysm btn-danger" id="delete" href="#"><i class="fa fa-trash-o fa-sm"></i> Borrar</a>						
+					</div>
+				</div>
+			</div>
+
+		<script type="text/javascript" src="utils.js"></script>
+		<script type="text/javascript" src="gamestate.js"></script>
+		<script type="text/javascript" src="logic.js"></script>
+	</body>
+</html>
