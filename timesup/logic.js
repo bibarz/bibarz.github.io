@@ -288,7 +288,7 @@ var display = function(session, gs) {
 		}
 		$("#config form").on("submit", function(event){
 			event.preventDefault();
-			sent_round_time();
+			send_round_time();
 		});
 		$("#config input[type='text']").on("focusout", function(event){
 			send_round_time();
