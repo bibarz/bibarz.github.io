@@ -206,8 +206,8 @@ input:focus{
 #candidate_text {
 	text-align: center;
 	height: 20vh;
-	margin: 3px;
-	width: 80%;
+	margin: 1% auto;
+	width: 96%;
 }
 
 #candidate_text p {
