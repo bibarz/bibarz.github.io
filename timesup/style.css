@@ -154,8 +154,8 @@ input:focus{
 }
 
 #in_round a.btn-xl {
-	padding: 3vh min(4vw, 4vh);
-    font-size: min(4.5vw, 4.5vh);
+	padding: 3vh min(4vw, 3.2vh);
+    font-size: min(4.5vw, 3.6vh);
     border-radius: 1.4vh;
 	margin: 0.3vh;
 }
