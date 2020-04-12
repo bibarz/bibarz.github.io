@@ -209,6 +209,6 @@ input:focus{
 }
 
 #candidate_text p {
-	margin: 3px;
+	margin: 1px;
 	font-size: min(24vw,18vh);
 }
