@@ -323,7 +323,7 @@ var display = function(session, gs) {
 		var display_card = function() {
 			var remaining = gs.deck.length - deck_index;
 			$("#candidate_text p").css('fontSize', 'min(24vw,18vh)')
-				.text(gs.deck[deck_index])
+				.text(gs.deck[deck_index].trim())
 				.textfillparent();
 			var text = (remaining == 1) ? "Queda ":"Quedan ";
 			$("#in_round .cards_left_text p").text(text + remaining);

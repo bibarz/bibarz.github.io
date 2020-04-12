@@ -157,14 +157,14 @@ input:focus{
     padding: 3vh min(4vw, 3.2vh);
     font-size: min(4.5vw, 3.6vh);
     border-radius: 1.4vh;
-    margin: 0.3vh;
+	margin: 0.3vh;
 }
 
 #in_round a.btn-mysm {
     padding: 1.2vh min(3vw, 3vh);
     font-size: min(3vw, 3vh);
     border-radius: 0.6vh;
-    margin: 0.4vh;
+	margin: 0.4vh;
 }
 
 
@@ -206,9 +206,12 @@ input:focus{
 #candidate_text {
 	text-align: center;
 	height: 20vh;
+	margin: 3px;
+	width: 100%;
 }
 
 #candidate_text p {
-	margin: 1px;
+	margin: 0;
 	font-size: min(24vw,18vh);
+	display: inline;
 }
