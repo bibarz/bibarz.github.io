@@ -360,7 +360,7 @@ var display = function(session, gs) {
 			cards_guess.push(gs.deck[deck_index]);
 			next_card();
 		});
-		if (gs.stage < 10) {
+		if (gs.stage == 0) {
 			$("#pass").show();
 			$("#pass").off("click").on("click", () => {
 				cards_pass.push(gs.deck[deck_index]);
