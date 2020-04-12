@@ -29,7 +29,8 @@ var add_cards_topic_callback = function(path, newValue) {
 	if (debug) console.log('Got string update for topic: ' + path, newValue);
 	var cards = JSON.parse(newValue.get());
 	for (var i=0; i < cards.length; i++) {
-		if (all_cards.indexOf(cards[i]) == -1) all_cards.push(cards[i]);
+		var card = cards[i].trim();
+		if (all_cards.indexOf(card) == -1) all_cards.push(card);
 	}
 	if (debug) console.log("Cards are now " + all_cards);
 	$("#manage_container p").text("Tarjetas: " + all_cards.length);
