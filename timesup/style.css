@@ -154,26 +154,26 @@ input:focus{
 }
 
 #in_round a.btn-xl {
-	padding: 3vh min(4vw, 3.2vh);
+    padding: 3vh min(4vw, 3.2vh);
     font-size: min(4.5vw, 3.6vh);
     border-radius: 1.4vh;
-	margin: 0.3vh;
+    margin: 0.3vh;
 }
 
 #in_round a.btn-mysm {
-	padding: 1.2vh min(3vw, 3vh);
+    padding: 1.2vh min(3vw, 3vh);
     font-size: min(3vw, 3vh);
     border-radius: 0.6vh;
-	margin: 0.4vh;
+    margin: 0.4vh;
 }
 
 
 .invisible {
-	display: none;
+    display: none;
 }
 
 .cards_left_text {
-	text-align: center;
+    text-align: center;
 }
 
 .cards_left_text p {
