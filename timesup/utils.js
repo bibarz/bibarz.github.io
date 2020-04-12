@@ -27,13 +27,15 @@ function getCookie(cname) {
         var ourText = $(this);
         var maxHeight = $(this).parent().height();
         var maxWidth = $(this).parent().width();
-		var textHeight = ourText.height();
-		var textWidth = ourText.width();
-		if (textHeight < maxHeight && textWidth < maxWidth) return this;
+        var textHeight = ourText.height();
+        var textWidth = ourText.width();
+        console.log("maxHeight " + maxHeight + "maxWidth " + maxWidth + "textHeight " + textHeight + "textWidth " + textWidth);
+        if (textHeight < maxHeight && textWidth < maxWidth) return this;
         do {
             ourText.css('fontSize', fontSize);
             textHeight = ourText.height();
             textWidth = ourText.width();
+	    console.log("fontSize " + fontSize + "textHeight " + textHeight + "textWidth " + textWidth);
             fontSize = fontSize - 1;
         } while ((textHeight > maxHeight || textWidth > maxWidth) && fontSize > 3);
         return this;
