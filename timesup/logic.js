@@ -13,6 +13,27 @@ var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 //		but won't see the update because they are non-refreshing.
 var the_gs = null;
 var all_cards = [];
+var beep = new Audio('short_countdown.mp3');
+var alarm_sound = new Audio('alarm.mp3');
+
+// Work around mobile browsers blocking sounds unless responding
+// to user input: play each sound once on the first user interaction
+// (plzy and pause immediately so nothing is heard)
+var allAudio = [];
+allAudio.push(beep);
+allAudio.push(alarm_sound);
+var tapped = function() {
+	if(allAudio) {
+		for(var audio of allAudio) {
+			audio.play();
+			audio.pause();
+			audio.currentTime = 0;
+		}
+		allAudio = null
+	}
+}
+document.body.addEventListener('touchstart', tapped, false);
+document.body.addEventListener('click', tapped, false);
 
 var diffusion_params = {
 		host   : 'klander-l102aw.eu.diffusion.cloud',
@@ -249,6 +270,7 @@ var display = function(session, gs) {
 	$("#manage_container").hide();
 	$("#new_game").hide();
 	$("#game_container").show();
+	var beeped = false;
 	if (gs.player_id < 0) {  // no round is on
 		if (debug) {
 			console.log("No round active.");
@@ -329,6 +351,8 @@ var display = function(session, gs) {
 			$("#in_round .cards_left_text p").text(text + remaining);
 		}
 		var end_round = function () {
+			alarm_sound.play();
+			beeped = false;
 			clearInterval(clock_var);
 			pub_command(session, {
 				name: "end_round",
@@ -348,6 +372,10 @@ var display = function(session, gs) {
 				var red = 112 + Math.round(76 * (1 - phase));
 				$("#clock p").css("background-color", "rgb(" + red + "," + green + ",112)");
 			}
+			if (time_left < 4.3 && !beeped) {
+				beeped = true;
+				beep.play();
+			}
 			if (time_left > 0) $("#clock p").text(time_left.toFixed(1));
 			else end_round();
 		}, 50);
@@ -361,7 +389,7 @@ var display = function(session, gs) {
 			cards_guess.push(gs.deck[deck_index]);
 			next_card();
 		});
-		if (gs.stage == 0) {
+		if (gs.stage > 0) {
 			$("#pass").show();
 			$("#pass").off("click").on("click", () => {
 				cards_pass.push(gs.deck[deck_index]);

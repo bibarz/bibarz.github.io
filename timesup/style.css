@@ -102,7 +102,7 @@ input:focus{
 }
 
 #before_round a.btn-xl {
-	margin: 5vh;
+	margin: 0;
 	padding: 2.4vh min(8vw, 8vh);
     font-size: min(8vw, 8vh);
     border-radius: 2.4vh;
