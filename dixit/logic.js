@@ -113,7 +113,7 @@ var subscribe_to_gamestate = function(session, player_name) {
 		.addStream('dixit/gamestate', diffusion.datatypes.json())
 		.on('value', function(path, specification, newValue, oldValue) {
 			var is_first = (the_gs === null);
-			gs = JSON.parse(newValue.get());
+			var gs = JSON.parse(newValue.get());
 			var refresh = gs.refresh;
 			if (debug) console.log('Got JSON update for topic: ' + path, gs);
 			if (is_first) {
@@ -121,6 +121,10 @@ var subscribe_to_gamestate = function(session, player_name) {
 			}
 			the_gs = Object.assign(the_gs, gs);
 			if (refresh || is_first) display(session, gs, player_name);
+			else {
+				if (gs.stage == 1) display_missing_candidates(gs, player_name);
+				if (gs.stage == 2) display_missing_votes(gs, player_name);
+			}
 			if (is_first && is_chief) {
 				if (debug) console.log("Subscribing to dixit/command after receiving dixit/gamestate, the_gs is ", the_gs);
 				subscribe_to_command(session, the_gs);
@@ -284,6 +288,42 @@ var display_voted = function(gs, voted_whom) {
 	}
 }
 
+var display_missing_candidates = function(gs, player_name) {
+	var player_idx = gs.player_names.indexOf(player_name);
+	var missing = [];
+	for (var i = 0; i<gs.n_players; i++) {
+		if (gs.candidates[i] == -1 && i != gs.turn) missing.push(gs.player_names[i]);
+	}
+	var missing_text = (missing.length > 1) ? "faltan ":"falta ";
+	missing_text = missing_text + missing.join(", ");
+	if (player_idx == gs.turn) {
+		$(".candidate_text p").show().html("Esperando propuestas, " + missing_text);
+	} else if (gs.candidates[player_idx] == -1) {
+		$(".candidate_text p").show().text("Elige carta, " + player_name);
+	} else {
+		$(".candidate_text p").show().text("Gracias. Puedes cambiar, " + missing_text);
+	}
+}
+
+
+var display_missing_votes = function(gs, player_name) {
+	var player_idx = gs.player_names.indexOf(player_name);
+	var missing = [];
+	for (var i = 0; i<gs.n_players; i++) {
+		if (gs.votes[i] == -1 && i != gs.turn) missing.push(gs.player_names[i]);
+	}
+	var missing_text_1 = ((missing.length > 1) ? "votos de ":"el voto de ") + missing.join(", ");
+	var missing_text_2 = ((missing.length > 1) ? "faltan ":"falta ") + missing.join(", ");
+	if (player_idx == gs.turn) {
+		$(".candidate_text p").show().html("Aqu&iacute las propuestas, " +
+										   "esperando " + missing_text_1);
+	} else if (gs.votes[player_idx] == -1) {
+		$(".candidate_text p").show().html("Aqu&iacute las propuestas, a votar");
+	} else {
+		$(".candidate_text p").show().html("Gracias. Puedes cambiar, " + missing_text_2);
+	}
+}
+
 
 
 var display = function(session, gs, player_name) {
@@ -334,8 +374,7 @@ var display = function(session, gs, player_name) {
 					arg_1: player_idx,
 					arg_2: card_id,
 				});
-				if (candidates_so_far < gs.n_players - 1)
-					$(".candidate_text p").show().text("Gracias. Puedes cambiar si quieres");
+				if (candidates_so_far < gs.n_players - 1) display_missing_candidates(gs, player_name);
 			}
 			$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg")
 				.off("click")
@@ -428,13 +467,7 @@ var display = function(session, gs, player_name) {
 	if (gs.stage == 0) {
 		$(".candidate_text p").hide();
 	} else if (gs.stage == 1) {
-		if (player_idx == gs.turn) {
-			$(".candidate_text p").show().html("Esperando a que los dem&aacute;s elijan sus cartas");
-		} else if (gs.candidates[player_idx] == -1) {
-			$(".candidate_text p").show().text("Elige carta, " + player_name);
-		} else {
-			$(".candidate_text p").show().text("Gracias. Puedes cambiar si quieres");
-		}
+		display_missing_candidates(gs, player_name);
 	} else if (gs.stage >= 2) {
 		set_candidates_size(gs, player_idx);
 		$(window).resize(() => set_candidates_size(gs, player_idx));
@@ -442,14 +475,9 @@ var display = function(session, gs, player_name) {
 			$(".candidates img").eq(i).hide().attr("src", "");
 		}	
 		$(".candidates img").off('click');
+
 		if (gs.stage == 2) {
-			if (player_idx == gs.turn) {
-				$(".candidate_text p").show().html("Aqu&iacute las propuestas, " +
-												   "esperando votos");
-			} else if (gs.votes[player_idx] == -1) {
-				$(".candidate_text p").show().html("Aqu&iacute las propuestas, a votar");
-			} else {
-				$(".candidate_text p").show().html("Gracias. Puedes cambiar si quieres");			}
+			display_missing_votes(gs, player_name);
 			$(".candidates img").on('click',function(){
 				var idx_in_proposals = $(".candidates img").index($(this));
 				var card_id = gs.candidates_shown[idx_in_proposals];
@@ -478,9 +506,7 @@ var display = function(session, gs, player_name) {
 							arg_1: player_idx,
 							arg_2: card_id,
 						});
-						if (votes_so_far < gs.n_players - 2)
-							$(".candidate_text p").show()
-								.text("Gracias. Puedes cambiar si quieres");
+						if (votes_so_far < gs.n_players - 2) display_missing_votes(gs, player_name);
 					}
 					ptext.text("Votar esta")
 						.off("click")
