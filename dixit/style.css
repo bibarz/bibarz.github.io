@@ -41,7 +41,7 @@ div.hand {
 	position: absolute;
 	top: 0;
 	width: 100%;
-	height: 30%;
+	height: 32%;
 	margin: 0;
 }
 
@@ -49,7 +49,7 @@ div.song {
 	position: absolute;
 	top: 30%;
 	width: 100%;
-	height: 20%;
+	height: 16%;
 	margin: 0;
 }
 
@@ -65,7 +65,7 @@ div.zoom {
 
 div.candidate_text {
 	position: absolute;
-	top: 50%;
+	top: 48%;
 	height: 5%;
 	width: 100%;
 	margin: 0;
@@ -73,8 +73,8 @@ div.candidate_text {
 
 div.candidates {
 	position: absolute;
-	top: 55%;
-	height: 30%;
+	top: 53%;
+	height: 32%;
 	width: 100%;
 	margin: 0;
 }
@@ -121,7 +121,7 @@ div.next_round {
 	text-align: center;
 	margin: 0;
 	padding: 0;
-	font-size: 40px;
+	font-size: 36px;
 }
 
 song_form input.invisible {

@@ -71,7 +71,10 @@ var setup_player_name = function(session) {
 		$("div.player_name").show();
 		$(".player_name_form").on("submit", function(event){
 			event.preventDefault();
-			if($(".player_name_form input").val()) send_player_name(session, $(".player_name_form input").val());
+			if($(".player_name_form input").val()) {
+				$(".player_name_form input").prop("disabled", true);
+				send_player_name(session, $(".player_name_form input").val());
+			}
 		});
 	} else {
 		send_player_name(session, player_name);
@@ -522,7 +525,7 @@ var display = function(session, gs, player_name) {
 					$(".zoom img").off("click").on("click", () => {$(".zoom img").hide()});
 					ptext.off("click").hide();
 				}
-				$("div.zoom").css("top", "3%").height("50%").show();
+				$("div.zoom").css("top", "2%").height("50%").show();
 			});
 		} else {  // stage 4
 			$(".candidate_text p").show().text("Resultados:");
