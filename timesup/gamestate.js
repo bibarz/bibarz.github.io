@@ -1,14 +1,14 @@
 const allEqual = arr => arr.every( v => v === arr[0] );
 
-var shuffle = function (array) {
+var shuffle = function (array, minIndex=0) {
 
 	var currentIndex = array.length;
 	var temporaryValue, randomIndex;
 
 	// While there remain elements to shuffle...
-	while (0 !== currentIndex) {
+	while (minIndex != currentIndex) {
 		// Pick a remaining element...
-		randomIndex = Math.floor(Math.random() * currentIndex);
+		randomIndex = minIndex + Math.floor(Math.random() * (currentIndex - minIndex));
 		currentIndex -= 1;
 
 		// And swap it with the current element.
@@ -25,7 +25,7 @@ var GameState = function(cards) {
 	// this.n_players = player_names.length;
 	// this.player_names = player_names.slice();
 	// this.cards_per_player = 6;
-	this.round_time = 60;
+	this.round_time = 30;
 	this.deck = cards.slice();
 	this.stage = 0;  // 0 - Describir 1 - ONe word 2 - Gesto
 	// this.turn = 0;
@@ -99,6 +99,7 @@ var GameState = function(cards) {
 			this._next_stage();
 		} else {
 			this.deck_index = new_deck_index;
+			shuffle(this.deck, this.deck_index);
 		}
 		return true;
 	}
