@@ -32,7 +32,7 @@ var GameState = function(cards) {
 	this.deck_index = 0;
 	this.player_id = -1;
 	this.player_start_time = 0;
-	this.guessed_last_round = -1;
+	this.guessed_last_round = [];
     // refresh is not really a state but a message field. When we do
 	// a state update that does not require refreshing (e.g., a proposal),
 	// we still may need to publish it, it is not enough that the chief keeps
@@ -51,7 +51,7 @@ var GameState = function(cards) {
 		this.stage = 0;
 		this.player_id = -1;
 		this.player_start_time = 0;
-		this.guessed_last_round = -1;
+		this.guessed_last_round = [];
 		return true;  // always refresh
 	}
 	
@@ -69,7 +69,7 @@ var GameState = function(cards) {
 	this.end_round = function(cards_guess, cards_pass, cards_delete) {
 		this.player_id = -1;
 		this.player_start_time = 0;
-		this.guessed_last_round = cards_guess.length;
+		this.guessed_last_round = cards_guess.slice();
 		for (var i=0; i<cards_delete.length; i++) {
 			idx = this.deck.indexOf(cards_delete[i]);
 			if (idx == -1) {

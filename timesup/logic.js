@@ -1,6 +1,6 @@
-var debug = true;
 // var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1) && (navigator.userAgent.indexOf("iPhone") == -1);
 var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+var debug = is_chief;
 // the_gs is mainly for chief, it is where it keeps the game state.
 // Non-chiefs use it only for two reasons:
 //    - To detect the first message from timesup/gamestate: so we always display
@@ -47,7 +47,7 @@ var TopicType = diffusion.topics.TopicType;
 
 
 var add_cards_topic_callback = function(path, newValue) {
-	if (debug) console.log('Got string update for topic: ' + path, newValue);
+	if (debug) console.log('Got string update for topic: ' + path, newValue.get());
 	var cards = JSON.parse(newValue.get());
 	for (var i=0; i < cards.length; i++) {
 		var card = cards[i].trim();
@@ -67,8 +67,8 @@ var send_cards = function(session) {
 	if (debug) console.log("Sending cards " + cards);
 	session.topics.updateValue('timesup/cards',
 							   JSON.stringify(cards),
-							   diffusion.datatypes.json());
-	$("#manage_container li").remove();
+							   diffusion.datatypes.json()).then(() => {$("#manage_container li").remove();},
+																reason => {alert("Las cosas no se han enviado, lo siento, refresca el navegador y manda de nuevo")});
 }
 
 
@@ -168,7 +168,11 @@ var subscribe_to_gamestate = function(session) {
 				the_gs = new GameState(gs.deck);
 			}
 			the_gs = Object.assign(the_gs, gs);
-			if (refresh || is_first) display(session, gs);
+			if (refresh || is_first) {
+				display(session, gs);
+			} else {
+				display_no_refresh(session, gs);
+			}
 			if (is_first && is_chief) {
 				if (debug) console.log("Subscribing to timesup/command after receiving timesup/gamestate, the_gs is ", the_gs);
 				subscribe_to_command(session, the_gs);
@@ -233,9 +237,8 @@ var pub_command = function(session, obj) {
 
 var execute_command = function(session, gs, obj) {
 	if (debug) {
-		console.log("Executing command " + obj);
+		console.log("Executing command ", obj);
 		console.log("gs is ", gs);
-		console.log("the_gs is ", the_gs);
 	}
 	var refresh = false;
 	if (obj["name"] == "init") {
@@ -265,6 +268,39 @@ var get_stage_text = function(i) {
 }
 
 
+var i_started_round = function(gs) {
+	if (!sessionStorage.started_round) return false;
+	var time_started = parseInt(sessionStorage.started_round);
+	if (isNaN(time_started)) {
+		console.warn("started_round yields NaN converted to int, it is " + sessionStorage.started_round);
+		return false;
+	}
+	var time_now = new Date().getTime();
+	if (!sessionStorage.round_duration) {
+		console.warn("Did not find round_duration in sessionStorage!");
+		return false;
+	}
+	var round_duration = parseInt(sessionStorage.round_duration);
+	if (isNaN(round_duration)) {
+		console.warn("round_duration yields NaN converted to int, it is " + sessionStorage.round_duration);
+		return false;
+	}
+	var diff_seconds = (time_now - time_started) / 1000;
+	if (diff_seconds > 2 * round_duration) {
+		if (debug) console.log("I did not start the round, time diff is " + diff_seconds + " vs round duration " + round_duration);
+		return false;
+	}
+		if (debug) console.log("I started this round, time diff is " + diff_seconds + " vs round duration " + round_duration);
+	return true;
+}
+
+
+	var display_no_refresh = function(session, gs) {
+	$("#config #round_time").val("");
+	$("#config #round_time").attr("placeholder", gs.round_time);
+}
+
+
 var display = function(session, gs) {
 	player_id = getCookie("player_id");
 	$("#manage_container").hide();
@@ -287,17 +323,28 @@ var display = function(session, gs) {
 		$("#before_round .cards_left_text p").text(
 			text_before + remaining + text_after);
 		$("#start_round").off("click").on("click", () => {
+			var time_now = new Date().getTime();
+			sessionStorage.setItem("started_round", time_now);
+			sessionStorage.setItem("round_duration", gs.round_time);
 			pub_command(session, {
 				name: "new_round",
 				player_id: player_id,
-				player_time: new Date().getTime(),
+				player_time: time_now,
 			});
 		});
-		if (gs.guessed_last_round >= 0) {
-			$("#last_round_result p").show().html(
-				"Puntos en la &uacute;ltima ronda: " + gs.guessed_last_round);
+		if (gs.guessed_last_round.length > 0) {
+			$("#last_round_result p.points").show().html(
+				"Puntos en la &uacute;ltima ronda: " + gs.guessed_last_round.length);
+			var font_size = Math.min(1, 3 / gs.guessed_last_round.length);
+			font_size = font_size * Math.min(0.06 * $(window).width(), 0.045 * $(window).height());
+
+			$("#last_round_result p.items").show()
+				.css("fontSize", font_size)
+				.html(gs.guessed_last_round.join("<br>"));
 		} else {
-			$("#last_round_result p").hide();
+			$("#last_round_result p.points").show().html("Sin aciertos en la &uacute;ltima ronda");
+			$("#last_round_result p.items").hide();
+
 		}
 		$("#config #round_time").attr("placeholder", gs.round_time);
 		var send_round_time = function() {
@@ -329,7 +376,7 @@ var display = function(session, gs) {
 				}
 			});
 		}
-	} else if (gs.player_id != player_id) {
+	} else if (gs.player_id != player_id || !i_started_round()) {
 		$("#in_round").hide();
 		$("#waiting_round").show();
 		$("#before_round").hide();
@@ -338,6 +385,7 @@ var display = function(session, gs) {
 		$("#in_round").show();
 		$("#waiting_round").hide();
 		$("#before_round").hide();
+		$("#clock p").removeClass("clock_animate");
 		var deck_index = gs.deck_index;
 		var cards_guess = [];
 		var cards_pass = [];
@@ -350,17 +398,29 @@ var display = function(session, gs) {
 			var text = (remaining == 1) ? "Queda ":"Quedan ";
 			$("#in_round .cards_left_text p").text(text + remaining);
 		}
-		var end_round = function () {
-			alarm_sound.play();
-			beeped = false;
+		var end_round = function (with_sound) {
 			clearInterval(clock_var);
+			beep.pause();
+			beep.currentTime = 0;
+			beeped = false;
+			if (with_sound) {
+				try {
+					alarm_sound.play();
+				}
+				catch(err) {
+					console.log("Error playing alarm sound:" + err)
+				}
+			}
+			sessionStorage.removeItem("started_round");
+			sessionStorage.removeItem("round_duration");
+			$("#clock p").removeClass("clock_animate");
+			$("#game_container").hide();
 			pub_command(session, {
 				name: "end_round",
 				cards_guess: cards_guess,
 				cards_pass: cards_pass,
 				cards_delete: cards_delete,
-			});			
-			$("#game_container").hide();
+			});
 		};
 		var clock_var = setInterval(() => {
 			var seconds = (new Date().getTime() - gs.player_start_time) / 1000;
@@ -377,12 +437,12 @@ var display = function(session, gs) {
 				beep.play();
 			}
 			if (time_left > 0) $("#clock p").text(time_left.toFixed(1));
-			else end_round();
-		}, 50);
+			else end_round(true);
+		}, 75);
 		var next_card = function() {
 			deck_index++;
 			var remaining = gs.deck.length - deck_index;
-			if (remaining <= 0) end_round();
+			if (remaining <= 0) end_round(false);
 			else display_card();
 		}
 		$("#correct").off("click").on("click", () => {

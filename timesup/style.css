@@ -115,7 +115,7 @@ input:focus{
 
 #last_round_result p {
 	margin: 10px;
-	font-size: min(8vw, 6vh);
+	font-size: min(6vw, 4.5vh);
 }
 
 #config {
