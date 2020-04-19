@@ -22,7 +22,7 @@ var shuffle = function (array) {
 };
 
 var GameState = function(n_cards, player_names) {
-	this.n_images = 128
+	this.n_images = 138;
 	this.n_players = player_names.length;
 	this.player_names = player_names.slice();
 	this.cards_per_player = 6;
