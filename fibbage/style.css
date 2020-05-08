@@ -1,0 +1,78 @@
+body {
+	font: normal 30px Verdana, Arial, sans-serif;
+}
+
+div.manage_container {
+	width: min(80vw,60vh);
+	margin: min(6vw,4vh) auto;
+	background: #f7f7f7;
+	box-shadow: 0 0 3px rgba(0,0,0, 0.1);
+}
+
+div.game_container {
+	width: min(80vw,60vh);
+	margin: min(6vw,4vh) auto;
+	background: #f7f7f7;
+	box-shadow: 0 0 3px rgba(0,0,0, 0.1);
+}
+
+.player_name p {
+	width: 90%;
+}
+
+.player_name_form input {
+	width: 90%;
+}
+
+div.question {
+	width: 100%;
+	text-align: center;
+}
+
+div.question p {
+	margin: 10px;
+	font-size: min(6vw, 4.5vh);
+}
+
+div.answer {
+	width: 100%;
+	text-align: center;
+}
+
+div.candidates {
+	width: 100%;
+	text-align: center;
+}
+
+
+div.scoreboard {
+	position: absolute;
+	top: 85%;
+	height: 15%;
+	width: 100%;
+}
+
+div.next_round {
+	position: absolute;
+	top: 90%;
+	right: 0;
+	height: 10%;
+	width: 30%;
+}
+
+
+.scoreboard table {
+	position: absolute;
+	bottom: 2px;
+	width: 100%;
+}
+
+.scoreboard td {
+	width: 10%;
+	text-align: center;
+}
+
+.next_round button {
+	width: 100%;
+	height: 100%;
+}

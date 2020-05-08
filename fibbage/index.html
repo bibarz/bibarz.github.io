@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="style.css">
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+		<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.css">
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+		<script src="https://download.pushtechnology.com/clients/6.4.2/js/diffusion-6.4.2.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/showdown@1.9.1/dist/showdown.min.js"></script>
+	</head>
+	<body>
+		<div class="manage_container">
+			<div class="player_name">
+				<p>Tu nombre:</p>
+				<form class="player_name_form" action="#">
+					<input type="textbox">
+					<button type="submit">Enviar nombre</button>
+				</form>
+			</div>
+			<div class="waiting_for_session">
+				<p>Esperando para empezar</p>
+			</div>
+			<div class="manage">
+				<button>Empezar</button>
+				<p></p>
+			</div>
+		</div>
+
+
+		<div class="game_container">
+			<div class="question">
+				<p class="question_caption"></p>
+			</div>
+
+			<div class="answer">
+				<p class="answer_caption"></p>
+				<form class="answer_form" action="#">
+					<input class="the_answer" type="textbox" placeholder="your answer">
+					<input class="invisible" type="submit" value="">
+				</form>
+			</div>
+
+			<div class="candidates">
+                <div class="candidate_text">
+                    <p></p>
+                </div>
+                <div class="candidate_buttons">
+                </div>
+			</div>
+
+			<div class="scoreboard">
+				<table>
+					<tr class="player_names">
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+					</tr>
+
+					<tr class="player_scores">
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+						<td></td>
+					</tr>
+				</table>
+			</div>
+
+			<div class="next_round">
+				<button>Next round</button>
+			</div>
+		</div>
+
+		<script type="text/javascript" src="utils.js"></script>
+		<script type="text/javascript" src="gamestate.js"></script>
+		<script type="text/javascript" src="logic.js"></script>
+	</body>
+</html>
