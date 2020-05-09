@@ -26,6 +26,7 @@ var GameState = function(n_cards, player_names) {
 	this.n_players = player_names.length;
 	this.player_names = player_names.slice();
 	this.cards_per_player = 6;
+	if (n_cards <= 0) n_cards = this.n_images;
 	this.n_cards = n_cards;
 	this.deck_order = [...Array(this.n_images).keys()];
 	this.stage = 0;  // 0 - Mano picks card and text; 1 - Players pick cards; 2 - Votes; 3 - Results
