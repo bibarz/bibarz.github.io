@@ -301,7 +301,11 @@ var result_html = function(gs, i, text) {
     if (i > gs.n_players) result_name = "Computer's answer ";
     var html = '<div class="result_div col-12 my-1">'
     html += '<span>' + result_name + "</span>";
-    html += '<button type="button" class="btn btn-outline-dark candidate_button disabled">';
+    if (i == gs.n_players) {
+        html += '<button type="button" class="btn btn-primary candidate_button disabled">';
+    } else {
+        html += '<button type="button" class="btn btn-outline-dark candidate_button disabled">';
+    }
     html += text;
     html += "</button>"
     var guessed = [];
@@ -555,7 +559,7 @@ var display = function(session, gs, player_name) {
 	// Scoreboard
 	if (gs.stage < 4) {
         for (i=0; i<gs.n_players; i++) {
-            color = (gs.scores[i] >= 5000) ? "red":"black";
+            color = ((gs.scores[i] > 0) && (gs.scores[i] == Math.max(...gs.scores))) ? "red":"black";
             $(".player_names div").eq(i).show().text(gs.player_names[i]).css("color", color);
             $(".player_scores div").eq(i).show().text(gs.scores[i]).css("color", color);
         }
