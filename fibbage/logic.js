@@ -326,7 +326,7 @@ var result_html = function(gs, i, text) {
 }
 
 var topic_html = function(topic, active) {
-    var html = '<div class="col-sm-4 col-md-3 my-1" style="text-align:center">'
+    var html = '<div class="col-6 col-sm-4 col-md-3 my-1" style="text-align:center">'
     html += '<div class="button_with_wrapping_text">'
     if (active) {
         html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark topic_button">'
@@ -341,7 +341,7 @@ var topic_html = function(topic, active) {
 }
 
 var candidate_html = function(text, active_reward) {
-    var html = '<div class="col-sm-4 col-md-3 my-1" style="text-align:center">'
+    var html = '<div class="col-6 col-sm-4 col-md-3 my-1" style="text-align:center">'
     html += '<div class="button_with_wrapping_text">'
     html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark candidate_button">'
     html += text;
