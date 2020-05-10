@@ -1,6 +1,6 @@
 var debug = true;
-var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
-// var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
+// var is_chief = (navigator.userAgent.indexOf("Chrome") == -1) && (navigator.userAgent.indexOf("Firefox") == -1);
+var is_chief = window.location.search.substring(1).indexOf("chief") >= 0;
 // the_gs is mainly for chief, it is where it keeps the game state.
 // Non-chiefs use it only for two reasons:
 //    - To detect the first message from fibbage/gamestate: so we always display
