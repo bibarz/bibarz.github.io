@@ -4,6 +4,7 @@
     margin-top: 5px;
     margin-bottom: 5px;
 }
+
 .last_round {
     background-color: #eeaaaa;
     height: 80px;
@@ -13,17 +14,29 @@
 .question {
     margin-top: 20px;
 }
+
  .reward_icon {
      vertical-align: middle;
      margin: 0.5rem;
  }
 
+ .winner_icon {
+     vertical-align: middle;
+     margin: 0.5rem;
+ }
+
+.final_score_buttons span {
+    margin: 0.5rem;
+}
+
 .reward_button {
     display: inline-block;
 }
-.kkkk {
+
+.button_with_wrapping_text {
     white-space: nowrap;
 }
+
 .candidate_button {
     white-space: normal;
     display: inline-block;

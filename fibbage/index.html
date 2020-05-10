@@ -36,12 +36,26 @@
             <div class="container jumbotron text-center last_round">
                 <h3> Last round! Score is 3x </h3>
             </div>
+
+			<div class="topics container">
+                <p class="topic_text"></p>
+                <div class="topic_buttons row">
+                </div>
+			</div>
+
 			<div class="question container">
-				<p class="question_caption"></p>
+				<!-- <p class="question_caption"></p> -->
 			</div>
 
 			<div class="answer container">
-				<p class="answer_caption"></p>
+                <div class="row justify-content-between">
+                <div class="col-10">
+    				<p class="answer_caption"></p>
+                </div>
+                <div class="skip_question col-2">
+                    <button class="btn btn-danger">Skip</button>
+                </div>
+                </div>
 				<form class="answer_form" action="#">
 					<input class="the_answer" type="textbox" placeholder="your answer">
 					<input class="invisible" type="submit" value="">
@@ -49,9 +63,7 @@
 			</div>
 
 			<div class="candidates container">
-                <div class="candidate_text row">
-                    <p></p>
-                </div>
+                <p class="candidate_text"></p>
                 <div class="candidate_buttons row">
                 </div>
 			</div>
@@ -100,6 +112,28 @@
                 </div>
 			</div>
 
+			<div class="container final_scores" style="text-align:center">
+                <h2 class="final_scores_text">Final scores:</h2>
+                <div class="final_score_buttons row">
+                </div>
+                <div class="new_game row justify-content-center">
+                    <div class="col-2">
+				        <button class="btn btn-success">New game</button>
+                    </div>
+                </div>
+			</div>
+
+            <div class="modal fade" id="takenAnswerModal" tabindex="-1" role="dialog" aria-labelledby="takenAnswerModal" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                    <div class="modal-body">
+                        Sorry, that answer is already taken
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
 		</div>
 
         <!-- Optional JavaScript -->

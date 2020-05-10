@@ -200,11 +200,23 @@ var execute_command = function(session, gs, obj) {
 	if (obj["name"] == "init") {
 		refresh = gs.init();
 	}
+	if (obj["name"] == "choose_topic") {
+		refresh = gs.choose_topic(obj["arg_1"]);
+	}
+	if (obj["name"] == "skip_question") {
+		refresh = gs.skip_question();
+	}
 	if (obj["name"] == "propose") {
 		refresh = gs.propose(obj["arg_1"], obj["arg_2"]);
 	}
 	if (obj["name"] == "vote") {
 		refresh = gs.vote(obj["arg_1"], obj["arg_2"]);
+	}
+	if (obj["name"] == "reward") {
+		refresh = gs.reward(obj["arg_1"], obj["arg_2"]);
+	}
+	if (obj["name"] == "unreward") {
+		refresh = gs.unreward(obj["arg_1"], obj["arg_2"]);
 	}
 	if (obj["name"] == "next_round") {
 		refresh = gs.next_round();
@@ -215,6 +227,27 @@ var execute_command = function(session, gs, obj) {
 							   diffusion.datatypes.json());
 }
 
+var check_answer = function(a, q, player_idx, gs) {
+    a = a.trim().toLowerCase();
+    if (a == "") return false;
+    for (var i=0; i<gs.n_players; i++) {
+        if (a == gs.candidates[i].trim().toLowerCase()) {
+            $('#takenAnswerModal').modal();
+            return false;
+        }
+    }
+    if (a == q.answer.trim().toLowerCase()) {
+        $('#takenAnswerModal').modal();
+        return false;
+    }
+    for (var i=0; i<q.alternateSpellings.length; i++) {
+        if (a == q.alternateSpellings[i].trim().toLowerCase()) {
+            $('#takenAnswerModal').modal();
+            return false;
+        }
+    }
+    return true;
+}
 
 var display_missing_votes = function(gs, player_name) {
 	var player_idx = gs.player_names.indexOf(player_name);
@@ -225,10 +258,41 @@ var display_missing_votes = function(gs, player_name) {
 	var missing_text_1 = ((missing.length > 1) ? "votes from ":"the vote from ") + missing.join(", ");
 	var missing_text_2 = missing.join(", ") + " still missing";
     if (gs.votes[player_idx] == -1) {
-		$(".candidate_text p").show().html("Here are the options, pick your choice");
+		$("p.candidate_text").show().text("Here are the options, take your pick");
 	} else {
-		$(".candidate_text p").show().html("Thanks. You can change your vote, " + missing_text_2);
+		$("p.candidate_text").show().text("Thanks. You can change your vote, " + missing_text_2);
 	}
+}
+
+
+var final_score_html = function(gs, i, winner) {
+    var result_name = "True answer ";
+    if (i < gs.n_players) result_name = gs.player_names[i] + "'s answer ";
+    if (i > gs.n_players) result_name = "Computer's answer ";
+    var html = '<div class="col-12 my-1">'
+    html += '<div class="row content-justify-start">'
+    html += '<div class="col-3 my-1">'
+    html += '<span class="h3">' + gs.player_names[i] + "</span>";
+    html +="</div>";
+    html += '<div class="col-3 my-1">'
+    html += '<button type="button" class="btn btn-outline-dark candidate_button disabled">';
+    html += gs.scores[i];
+    html += "</button>"
+    html +="</div>";
+    html += '<div class="col-3 my-1">'
+    if (winner) {
+        html += '<span><i class="winner_icon fa fa-trophy fa-2x"></i></span>';
+    }
+    html +="</div>";
+    html += '<div class="col-3 my-1">'
+    html += '<span><i class="winner_icon fa fa-smile-o fa-1x"></i></span>';
+    html += '<button type="button" class="btn btn-outline-dark candidate_button disabled">';
+    html += gs.reward_scores[i];
+    html += "</button>"
+    html +="</div>";
+    html +="</div>";
+    html +="</div>";
+    return html;
 }
 
 var result_html = function(gs, i, text) {
@@ -257,19 +321,34 @@ var result_html = function(gs, i, text) {
     return html;
 }
 
-var candidate_html = function(text) {
+var topic_html = function(topic, active) {
     var html = '<div class="col-sm-4 col-md-3 my-1" style="text-align:center">'
-    // html += '<div class="row justify-content-center align-items-center">'
-    html += '<div class="kkkk">'
+    html += '<div class="button_with_wrapping_text">'
+    if (active) {
+        html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark topic_button">'
+    } else {
+        html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark topic_button" disabled>'
+    }
+    html += topic;
+    html += '</button>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+}
+
+var candidate_html = function(text, active_reward) {
+    var html = '<div class="col-sm-4 col-md-3 my-1" style="text-align:center">'
+    html += '<div class="button_with_wrapping_text">'
     html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark candidate_button">'
     html += text;
     html += '</button>';
-    // html += '</div>';
-    // html += '<div class="col-3">'
-    html += '<button type="button" class="reward_button btn btn-sm btn-warning m-1 p-0" data-toggle="button" aria-pressed="false" autocomplete="off">';
+    if (active_reward) {
+        html += '<button type="button" class="reward_button btn btn-sm btn-warning m-1 p-0 active" data-toggle="button" aria-pressed="true" autocomplete="off">';
+    } else {
+        html += '<button type="button" class="reward_button btn btn-sm btn-warning m-1 p-0" data-toggle="button" aria-pressed="false" autocomplete="off">';
+    }
     html += '<i class="reward_icon fa fa-smile-o fa-1x"></i>'
     html += '</button>';
-    // html += '</div>';
     html += '</div>';
     html += '</div>';
     return html;
@@ -288,21 +367,76 @@ var display = function(session, gs, player_name) {
 		console.log("Candidates: " + gs.candidates);
 	}
 	
-    q = questions[gs.deck_order[gs.deck_index]];
-    var converter = new showdown.Converter();
-    html_question = converter.makeHtml(q.question);
-    html_question = html_question.replace("<BLANK>", "___________");
-    $("p.question_caption").html(html_question);
+    // Last round
+    if(gs.round == gs.n_rounds - 1 && gs.stage != 4) {
+        $("div.last_round").show();
+    } else {
+        $("div.last_round").hide();
+    }
+    
+    // Topics
+    if(gs.stage == 0) {
+        if (gs.turn == player_idx) $("p.topic_text").text("Choose a topic, " + player_name);
+        else $("p.topic_text").text("Waiting for " + gs.player_names[gs.turn] + " to choose a topic among:");
+        $("div.topic_buttons").empty();
+        if (gs.round == gs.n_rounds - 1) {
+            qs = final_questions;
+        } else {
+            qs = questions;
+        }
+        for (var i = 0; i < gs.topic_idx.length; i++) {
+            var topic = qs[gs.topic_idx[i]].category;
+            $("div.topic_buttons").append(topic_html(topic, gs.turn == player_idx));
+        }
+        var choose_topic = function(button_idx) {
+            var topic_idx = gs.topic_idx[button_idx];
+            pub_command(session, {
+                name: "choose_topic",
+                arg_1: topic_idx,
+            });
+        }
+        $(".topic_button").each(function(button_idx) {
+            $(this).click(() => choose_topic(button_idx));
+        });
+        $("div.topics").show();
+    } else {
+        $("div.topics").hide();
+    }
+    
+    // Question
+    if(gs.stage == 0 || gs.stage == 4) {
+        $("div.question").hide();
+    } else {
+        if (gs.round == gs.n_rounds - 1) {
+            var q = final_questions[gs.deck_final_order[gs.deck_final_index]];
+        } else {
+            var q = questions[gs.deck_order[gs.deck_index]];
+        }
+        var converter = new showdown.Converter();
+        html_question = converter.makeHtml(q.question);
+        html_question = html_question.replace("<BLANK>", "___________");
+        $("div.question").html(html_question);
+        $("div.question").show();
+    }
 
     // Answer form
-    if(gs.stage == 0) {
+    if(gs.stage == 1) {
         $("div.answer").show();
+        if (is_chief) {
+            $(".skip_question button").show()
+                .off("click")
+                .on("click", function() {
+                    $(".skip_question button").off("click").hide();
+                    pub_command(session, {"name": "skip_question"});
+                });
+        } else {
+            $(".skip_question button").hide();
+        }
 		var send_answer = function() {
-            console.log("Send answer called!");
-            $(".answer_form input.the_answer").off("focusout");
-            $(".answer_form").off("submit").hide();
             var a = $(".answer_form input").val().trim();
-            if (a != "") {
+            if (check_answer(a, q, player_idx, gs)) {
+                $(".answer_form input.the_answer").off("focusout");
+                $(".answer_form").off("submit").hide();
                 pub_command(session, {
                     name: "propose",
                     arg_1: player_idx,
@@ -340,13 +474,15 @@ var display = function(session, gs, player_name) {
 	}
 	
     // Voting
-    var n_proposals = gs.n_players + 1;
-    if (q.suggestions.length > 0) n_proposals += 1;
-    if(gs.stage == 0) {
+    if(gs.stage <= 1 || gs.stage == 4) {
         $("div.candidates").hide();
-    } else if (gs.stage == 1) {
+    } else if (gs.stage == 2) {
+        var n_proposals = gs.n_players + 1;
+        if (q.suggestions.length > 0) n_proposals += 1;
         $("div.candidates").show();
-        var candidate_order = shuffle([...Array(n_proposals).keys()]);
+        var candidate_order = [...Array(n_proposals).keys()];
+        candidate_order.splice(player_idx, 1);
+        shuffle(candidate_order);
         $("div.candidate_buttons").empty();
         display_missing_votes(gs, player_name);
         for (var i = 0; i < candidate_order.length; i++) {
@@ -357,16 +493,10 @@ var display = function(session, gs, player_name) {
             } else {
                 text = gs.candidates[candidate_order[i]];
             }
-            $("div.candidate_buttons").append(candidate_html(text));
+            var active_reward = (gs.rewards[player_idx].indexOf(candidate_order[i]) != -1);
+            $("div.candidate_buttons").append(candidate_html(text, active_reward));
         }
-        // $(".candidate_button").each(function() {
-        //     console.log("value:", $(this));
-        //     $(this).textfill({ maxFontPixels: 48 });
-        // });
         var vote = function(idx) {
-            if(candidate_order[idx] == player_idx) {
-                return;
-            }
             $(".candidate_button").removeClass("active");
             $(".candidate_button").eq(idx).addClass("active");
             var real_vote = candidate_order[idx];
@@ -380,21 +510,35 @@ var display = function(session, gs, player_name) {
                 arg_1: player_idx,
                 arg_2: real_vote,
             });
-            if (votes_so_far < gs.n_players - 1) display_missing_votes(gs, player_name);
+            if (votes_so_far < gs.n_players) display_missing_votes(gs, player_name);
+        }
+        var reward = function(idx) {
+            var action = "reward"
+            if ($(".reward_button").eq(idx).hasClass("active")) {
+                action = "unreward";
+            }
+            console.log("Action is " + action)
+            var real_vote = candidate_order[idx];
+            pub_command(session, {
+                name: action,
+                arg_1: player_idx,
+                arg_2: real_vote,
+            });
         }
         if (gs.votes[player_idx] != -1) {
             $(".candidate_button").eq(candidate_order.indexOf(gs.votes[player_idx])).addClass("active");
         }
         $(".candidate_button").each(function(idx) {
-            if(candidate_order[idx] == player_idx) {
-                $(".candidate_button").eq(idx).addClass("disabled");
-            } else {
-                $(this).click(() => vote(idx));
-            }
+            $(this).click(() => vote(idx));
         })
-    } else { // stage 2
+        $(".reward_button").each(function(idx) {
+            $(this).click(() => reward(idx));
+        })
+    } else { // stage 3
+        var n_proposals = gs.n_players + 1;
+        if (q.suggestions.length > 0) n_proposals += 1;
         $("div.candidates").show();
-        $(".candidate_text p").hide();
+        $("p.candidate_text").hide();
         $("div.candidate_buttons").empty();
         for (var i = 0; i < n_proposals; i++) {
             if (i == gs.n_players + 1) {
@@ -407,121 +551,60 @@ var display = function(session, gs, player_name) {
             $("div.candidate_buttons").append(result_html(gs, i, text));
         }
     }
-        
-	// // Candidate player names
-	// if (gs.stage < 3) {
-	// 	$(".candidates p").hide().text("");
-	// } else {
-	// 	for (var i=0; i<gs.candidates_shown.length; i++) {
-	// 		var idx = gs.candidates.indexOf(gs.candidates_shown[i]);
-	// 		var bg_color = (idx == gs.turn) ? "yellow":"white";
-	// 		$(".candidates p.proposed").eq(i).show()
-	// 			.css("background-color", bg_color)
-	// 			.text(gs.player_names[idx]);
-	// 	}
-	// 	for (var i=gs.candidates.length; i<$(".candidates p.proposed").length; i++) {
-	// 		$(".candidates p.proposed").eq(i).hide().text("");
-	// 	}
-	// 	var voted_whom = [];
-	// 	for (var i=0; i < gs.n_players; i++) {
-	// 		if (i != gs.turn) voted_whom.push(gs.candidates_shown.indexOf(gs.votes[i]));
-	// 		else voted_whom.push(-1);
-	// 	}
-	// 	display_voted(gs, voted_whom);
-	// 	$(window).resize(() => display_voted(gs, voted_whom));
-	// }
-
-	// // Candidates
-	// if (gs.stage <= 1) {
-	// 	$(".candidates img").hide().attr("src", "");
-	// }
-	// if (gs.stage == 0) {
-	// 	$(".candidate_text p").hide();
-	// } else if (gs.stage == 1) {
-	// 	display_missing_candidates(gs, player_name);
-	// } else if (gs.stage >= 2) {
-	// 	set_candidates_size(gs, player_idx);
-	// 	$(window).resize(() => set_candidates_size(gs, player_idx));
-	// 	for (var i=gs.candidates.length; i<$(".candidates img").length; i++) {
-	// 		$(".candidates img").eq(i).hide().attr("src", "");
-	// 	}	
-	// 	$(".candidates img").off('click');
-
-	// 	if (gs.stage == 2) {
-	// 		display_missing_votes(gs, player_name);
-	// 		$(".candidates img").on('click',function(){
-	// 			var idx_in_proposals = $(".candidates img").index($(this));
-	// 			var card_id = gs.candidates_shown[idx_in_proposals];
-	// 			if (card_id == gs.candidates[player_idx]) {
-	// 				$(this).animate({opacity: 0.5}, 200);
-	// 				$(this).animate({opacity: 1}, 200);
-	// 				return;
-	// 			}
-	// 			$(".zoom img").attr("src", "img/Img_"+(card_id+1)+".jpg").show();
-	// 			var ptext = $(".zoom p");
-	// 			if (player_idx != gs.turn) {
-	// 				var vote_this = function() {
-	// 					$(".candidates img").css("background-color", "");
-	// 					$(".candidates img").eq(idx_in_proposals)
-	// 						.css("background-color", "red");
-	// 					ptext.stop().hide();
-	// 					$("div.zoom").hide();
-	// 					var votes_so_far = 0;
-	// 					for (var i=0; i<gs.n_players; i++) {
-	// 						// use the_gs so it is up-to-date even without refresh
-	// 						if (the_gs.votes[i] != -1) votes_so_far ++;
-	// 					}
-	// 					console.log("Votes so far: " + votes_so_far, " the_gs.votes: " + the_gs.votes);
-	// 					pub_command(session, {
-	// 						name: "vote",
-	// 						arg_1: player_idx,
-	// 						arg_2: card_id,
-	// 					});
-	// 					if (votes_so_far < gs.n_players - 2) display_missing_votes(gs, player_name);
-	// 				}
-	// 				ptext.text("Votar esta")
-	// 					.off("click")
-	// 					.on("click", vote_this)
-	// 					.show();
-	// 				$(".zoom img").off("click").on("click", vote_this);
-	// 				function startAnimation() {
-	// 					ptext.animate({opacity: 0}, 3000);
-	// 					ptext.animate({opacity: 1}, 3000, startAnimation);
-	// 				}
-	// 				startAnimation();
-	// 			} else {  // let the mano just see the zoomed card
-	// 				$(".zoom img").off("click").on("click", () => {$(".zoom img").hide()});
-	// 				ptext.off("click").hide();
-	// 			}
-	// 			$("div.zoom").css("top", "2%").height("50%").show();
-	// 		});
-	// 	} else {  // stage 4
-	// 		$(".candidate_text p").show().text("Resultados:");
-	// 	}
-	// }
 	
 	// Scoreboard
-	for (i=0; i<gs.n_players; i++) {
-		color = (gs.scores[i] >= 5000) ? "red":"black";
-		$(".player_names div").eq(i).show().text(gs.player_names[i]).css("color", color);
-		$(".player_scores div").eq(i).show().text(gs.scores[i]).css("color", color);
-	}
-	for (i=gs.n_players; i<12; i++) {
-		$(".player_names div").eq(i).hide();
-		$(".player_scores div").eq(i).hide();
-	}
+	if (gs.stage < 4) {
+        for (i=0; i<gs.n_players; i++) {
+            color = (gs.scores[i] >= 5000) ? "red":"black";
+            $(".player_names div").eq(i).show().text(gs.player_names[i]).css("color", color);
+            $(".player_scores div").eq(i).show().text(gs.scores[i]).css("color", color);
+        }
+        for (i=gs.n_players; i<12; i++) {
+            $(".player_names div").eq(i).hide();
+            $(".player_scores div").eq(i).hide();
+        }
+		$("div.scoreboard").show();
+    } else {
+		$("div.scoreboard").hide();
+    }
 	
 	// Next round
-	if (gs.stage < 2 || !is_chief) {
-		$(".next_round button").hide();
+	if (gs.stage != 3 || !is_chief) {
+		$("div.next_round").hide();
 	} else {
-		$(".next_round button").show()
+        $(".next_round button").show()
+        .off("click")
 		.on("click", function() {
 			$(".next_round button").off("click").hide();
 			pub_command(session, {"name": "next_round"});
 		});
+        $("div.next_round").show()
 	}
 
+    // Final scores
+	if (gs.stage < 4) {
+        $("div.final_scores").hide();
+    } else {
+        $("div.final_score_buttons").empty();
+        var player_order = [...Array(gs.n_players).keys()];
+        player_order.sort(function(i,j) {return(gs.scores[j] - gs.scores[i])});
+        console.log("player_order " + player_order)
+        for (var i = 0; i < player_order.length; i++) {
+            var winner = (gs.scores[player_order[i]] == gs.scores[player_order[0]]);
+            $("div.final_score_buttons").append(final_score_html(gs, player_order[i], winner));
+        }
+        if (is_chief) {
+            $(".new_game button").show()
+                .off("click")
+                .on("click", function() {
+                    $(".new_game button").off("click").hide();
+                    pub_command(session, {"name": "init"});
+                });
+        } else {
+            $(".new_game button").hide();
+        }
+        $("div.final_scores").show();
+    }
 }
 
 var session_promise = diffusion.connect(diffusion_params);
