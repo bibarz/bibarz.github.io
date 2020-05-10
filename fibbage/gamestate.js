@@ -28,7 +28,8 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	this.n_final_questions = n_final_questions;
 	this.deck_order = [...Array(this.n_questions).keys()];
 	this.stage = 0;  // 0 - Players write answers; 1 - Players pick answers; 2 - Results
-	this.deck_index = 0;
+    this.deck_index = 0;
+    this.misleading_proposal_idx = -1;
 	this.candidates = [];
 	this.votes = [];
 	this.scores = [];
@@ -43,24 +44,13 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	// display when it is the first message after a reload).
 	this.refresh = true;
 	
-	this.clear_round = function() {
-        this.stage = 0;
-		// Clear state
-		this.candidates.length = 0;
-		this.votes.length = 0;
-		for (var i = 1; i <= this.n_players; i++) {
-			this.candidates.push("");
-			this.votes.push(-1);
-		}
-	}
-
     this.init = function() {
 		if (debug) {
 			console.log("Initializing game state");
 		}
-		shuffle(this.deck_order);
-        this.deck_index = 0;
-        this.clear_round();
+		// shuffle(this.deck_order);
+        this.deck_index = -1;
+        this.next_round();
 
         // Clear scores
         this.scores.length = 0;
@@ -71,8 +61,16 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	}
 	
 	this.next_round = function() {
-        this.clear_round();
-        this.deck_index = 0;
+        this.stage = 0;
+		// Clear state
+		this.candidates.length = 0;
+		this.votes.length = 0;
+		for (var i = 1; i <= this.n_players; i++) {
+			this.candidates.push("");
+			this.votes.push(-1);
+		}
+        this.deck_index = 0;  // += 1
+        this.misleading_proposal_idx = Math.floor(Math.random() * 999999);
 		return true;  // always refresh
 	}
 	

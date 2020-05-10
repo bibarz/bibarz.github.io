@@ -23,10 +23,12 @@ function getCookie(cname) {
 
 ;(function($) {
     $.fn.textfill = function(options) {
-        var fontSize = options.maxFontPixels;
         var ourText = $(this);
-        var maxHeight = $(this).height();
-        var maxWidth = $(this).width();
+        var fontSize = parseInt(ourText.css('font-size'));
+        var ourDiv = ourText.parent();
+        var maxHeight = ourDiv.height();
+        var maxWidth = (7*ourDiv.width())/8;
+        console.log("ourDiv:", ourDiv, "ourText:", ourText, "fontsize:", fontSize, "maxWidth", maxWidth)
         var textHeight;
         var textWidth;
         do {

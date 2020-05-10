@@ -216,40 +216,6 @@ var execute_command = function(session, gs, obj) {
 }
 
 
-var display_voted = function(gs, voted_whom) {
-	var window_width = $(window).width();
-	var card_height = $("div.candidates").height();
-	var card_width = card_height * 11 / 16;
-	card_width = Math.min(
-		card_width,
-		(window_width - card_width) / (gs.n_players - 1));
-	var cum_votes = [];
-	for (var i = 0; i < gs.candidates_shown.length; i++)
-		cum_votes.push(0);
-	var cum_votes_so_far = cum_votes.slice();
-	for (var i=0; i<gs.n_players; i++) {
-		if (voted_whom[i] == -1) continue;
-		cum_votes[voted_whom[i]]++;
-	}
-	console.log("Cum votes:" + cum_votes + ", voted_whom:" + voted_whom);
-	for (var i=0; i<gs.n_players; i++) {
-		idx = voted_whom[i];
-		if (idx == -1) continue;
-		if (gs.candidates_shown[idx] == gs.candidates[gs.turn]) color="blue";
-		else color="red";
-		$(".candidates p.voted").eq(i).show()
-			.text(gs.player_names[i])
-			.css("color", color)
-			.css("left", idx * card_width)
-			.css("top", 0.3 * card_height + 0.7 * card_height * cum_votes_so_far[idx] / cum_votes[idx])
-			.outerWidth(card_width, true);
-		cum_votes_so_far[idx]++;
-	}	
-	for (var i=gs.n_players; i<$(".candidates p.voted").length; i++) {
-		$(".candidates p.voted").eq(i).hide().text("");
-	}
-}
-
 var display_missing_votes = function(gs, player_name) {
 	var player_idx = gs.player_names.indexOf(player_name);
 	var missing = [];
@@ -268,7 +234,9 @@ var display_missing_votes = function(gs, player_name) {
 var result_html = function(gs, i, text) {
     var result_name = "True answer ";
     if (i < gs.n_players) result_name = gs.player_names[i] + "'s answer ";
-    var html = '<div class="result_div"><span>' + result_name + "</span>";
+    if (i > gs.n_players) result_name = "Computer's answer ";
+    var html = '<div class="result_div col-12 my-1">'
+    html += '<span>' + result_name + "</span>";
     html += '<button type="button" class="btn btn-outline-dark candidate_button disabled">';
     html += text;
     html += "</button>"
@@ -280,15 +248,30 @@ var result_html = function(gs, i, text) {
         html += "<span>";
         html += " voted by " + guessed.join(", ");
         html += "</span>";
+    } else {
+        html += "<span>";
+        html += " not voted"
+        html += "</span>";
     }
     html +="</div>";
     return html;
 }
 
 var candidate_html = function(text) {
-    var html = '<div class="button_div"><button type="button" class="btn btn-outline-dark candidate_button">'
-    html = html + text;
-    html = html + '</button></div>';
+    var html = '<div class="col-sm-4 col-md-3 my-1" style="text-align:center">'
+    // html += '<div class="row justify-content-center align-items-center">'
+    html += '<div class="kkkk">'
+    html += '<button type="button" class="btn m-0 btn-lg btn-outline-dark candidate_button">'
+    html += text;
+    html += '</button>';
+    // html += '</div>';
+    // html += '<div class="col-3">'
+    html += '<button type="button" class="reward_button btn btn-sm btn-warning m-1 p-0" data-toggle="button" aria-pressed="false" autocomplete="off">';
+    html += '<i class="reward_icon fa fa-smile-o fa-1x"></i>'
+    html += '</button>';
+    // html += '</div>';
+    html += '</div>';
+    html += '</div>';
     return html;
 }
 
@@ -357,21 +340,29 @@ var display = function(session, gs, player_name) {
 	}
 	
     // Voting
+    var n_proposals = gs.n_players + 1;
+    if (q.suggestions.length > 0) n_proposals += 1;
     if(gs.stage == 0) {
         $("div.candidates").hide();
     } else if (gs.stage == 1) {
         $("div.candidates").show();
-        var candidate_order = shuffle([...Array(gs.n_players + 1).keys()]);
+        var candidate_order = shuffle([...Array(n_proposals).keys()]);
         $("div.candidate_buttons").empty();
         display_missing_votes(gs, player_name);
-        for (var i = 0; i <= gs.n_players; i++) {
-            if (candidate_order[i] == gs.n_players) {
+        for (var i = 0; i < candidate_order.length; i++) {
+            if (candidate_order[i] == gs.n_players + 1) {
+                text = q.suggestions[gs.misleading_proposal_idx % q.suggestions.length];
+            } else if (candidate_order[i] == gs.n_players) {
                 text = q.answer;
             } else {
                 text = gs.candidates[candidate_order[i]];
             }
             $("div.candidate_buttons").append(candidate_html(text));
         }
+        // $(".candidate_button").each(function() {
+        //     console.log("value:", $(this));
+        //     $(this).textfill({ maxFontPixels: 48 });
+        // });
         var vote = function(idx) {
             if(candidate_order[idx] == player_idx) {
                 return;
@@ -405,8 +396,10 @@ var display = function(session, gs, player_name) {
         $("div.candidates").show();
         $(".candidate_text p").hide();
         $("div.candidate_buttons").empty();
-        for (var i = 0; i <= gs.n_players; i++) {
-            if (i == gs.n_players) {
+        for (var i = 0; i < n_proposals; i++) {
+            if (i == gs.n_players + 1) {
+                text = q.suggestions[gs.misleading_proposal_idx % q.suggestions.length];
+            } else if (i == gs.n_players) {
                 text = q.answer;
             } else {
                 text = gs.candidates[i];
@@ -510,8 +503,12 @@ var display = function(session, gs, player_name) {
 	// Scoreboard
 	for (i=0; i<gs.n_players; i++) {
 		color = (gs.scores[i] >= 5000) ? "red":"black";
-		$(".player_names td").eq(i).text(gs.player_names[i]).css("color", color);
-		$(".player_scores td").eq(i).text(gs.scores[i]).css("color", color);
+		$(".player_names div").eq(i).show().text(gs.player_names[i]).css("color", color);
+		$(".player_scores div").eq(i).show().text(gs.scores[i]).css("color", color);
+	}
+	for (i=gs.n_players; i<12; i++) {
+		$(".player_names div").eq(i).hide();
+		$(".player_scores div").eq(i).hide();
 	}
 	
 	// Next round
