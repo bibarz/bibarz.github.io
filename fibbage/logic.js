@@ -576,7 +576,9 @@ var display = function(session, gs, player_name) {
 	if (gs.stage != 3 || !is_chief) {
 		$("div.next_round").hide();
 	} else {
+        var text = (gs.round == gs.n_rounds - 1) ? "Next round":"Final score"
         $(".next_round button").show()
+        .text(text)
         .off("click")
 		.on("click", function() {
 			$(".next_round button").off("click").hide();
