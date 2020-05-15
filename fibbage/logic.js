@@ -127,7 +127,7 @@ var subscribe_to_gamestate = function(session, player_name) {
             the_gs = Object.assign(the_gs, gs);
             if (refresh || is_first) display(session, gs, player_name);
             else {
-                if (gs.stage == 1) display_missing_votes(gs, player_name);
+                if (gs.stage == 2) display_missing_votes(gs, player_name);
             }
             if (is_first && is_chief) {
                 if (debug) console.log("Subscribing to fibbage/command after receiving fibbage/gamestate, the_gs is ", the_gs);
@@ -221,7 +221,7 @@ var execute_command = function(session, gs, obj) {
 	if (obj["name"] == "next_round") {
 		refresh = gs.next_round();
 	}
-	gs.refresh = refresh;
+    gs.refresh = refresh;
 	session.topics.updateValue('fibbage/gamestate',
 							   JSON.stringify(gs),
 							   diffusion.datatypes.json());
@@ -383,13 +383,14 @@ var display = function(session, gs, player_name) {
         if (gs.turn == player_idx) $("p.topic_text").text("Choose a topic, " + player_name);
         else $("p.topic_text").text("Waiting for " + gs.player_names[gs.turn] + " to choose a topic among:");
         $("div.topic_buttons").empty();
+        var qs = questions;
+        var d_o = gs.deck_order;
         if (gs.round == gs.n_rounds - 1) {
             qs = final_questions;
-        } else {
-            qs = questions;
+            d_o = gs.deck_final_order;
         }
         for (var i = 0; i < gs.topic_idx.length; i++) {
-            var topic = qs[gs.topic_idx[i]].category;
+            var topic = qs[d_o[gs.topic_idx[i]]].category;
             $("div.topic_buttons").append(topic_html(topic, gs.turn == player_idx));
         }
         var choose_topic = function(button_idx) {
@@ -439,7 +440,6 @@ var display = function(session, gs, player_name) {
 		var send_answer = function() {
             var a = $(".answer_form input").val().trim();
             if (check_answer(a, q, player_idx, gs)) {
-                //$(".answer_form input.the_answer").off("focusout");
                 $(".answer_form").off("submit").hide();
                 pub_command(session, {
                     name: "propose",
@@ -456,24 +456,17 @@ var display = function(session, gs, player_name) {
         if (gs.candidates[player_idx] == "") {
             $("p.answer_caption").show().text("Your answer, " + player_name);
             $(".answer_form").show().off("submit").on("submit", function(event){
-                console.log("Calling send answer from submit!");
                 event.preventDefault();
                 send_answer();
             });
-            //$(".answer_form input.the_answer").off("focusout").on("focusout", function(event){
-            //    console.log("Calling send answer from focus!");
-            //    send_answer();
-            //});
         } else {
             $("p.answer_caption").show().text("Thanks. " + missing_text);
             $(".answer_form input").val("");
-            //$(".answer_form input.the_answer").off("focusout");
             $(".answer_form").off("submit").hide();
         }
 	} else {
         $("div.answer").hide();
         $(".answer_form input").val("");
-        //$(".answer_form input.the_answer").off("focusout");
         $(".answer_form").off("submit").hide();
 	}
 	
@@ -504,24 +497,17 @@ var display = function(session, gs, player_name) {
             $(".candidate_button").removeClass("active");
             $(".candidate_button").eq(idx).addClass("active");
             var real_vote = candidate_order[idx];
-            var votes_so_far = 0;
-            for (var i=0; i<gs.n_players; i++) {
-                // use the_gs so it is up-to-date even without refresh
-                if (the_gs.votes[i] != -1) votes_so_far ++;
-            }
             pub_command(session, {
                 name: "vote",
                 arg_1: player_idx,
                 arg_2: real_vote,
             });
-            if (votes_so_far < gs.n_players) display_missing_votes(gs, player_name);
         }
         var reward = function(idx) {
             var action = "reward"
             if ($(".reward_button").eq(idx).hasClass("active")) {
                 action = "unreward";
             }
-            console.log("Action is " + action)
             var real_vote = candidate_order[idx];
             pub_command(session, {
                 name: action,
@@ -576,7 +562,7 @@ var display = function(session, gs, player_name) {
 	if (gs.stage != 3 || !is_chief) {
 		$("div.next_round").hide();
 	} else {
-        var text = (gs.round == gs.n_rounds - 1) ? "Next round":"Final score"
+        var text = (gs.round == gs.n_rounds - 1) ? "Final score":"Next round";
         $(".next_round button").show()
         .text(text)
         .off("click")
@@ -584,7 +570,7 @@ var display = function(session, gs, player_name) {
 			$(".next_round button").off("click").hide();
 			pub_command(session, {"name": "next_round"});
 		});
-        $("div.next_round").show()
+        $("div.next_round").show();
 	}
 
     // Final scores
@@ -594,7 +580,6 @@ var display = function(session, gs, player_name) {
         $("div.final_score_buttons").empty();
         var player_order = [...Array(gs.n_players).keys()];
         player_order.sort(function(i,j) {return(gs.scores[j] - gs.scores[i])});
-        console.log("player_order " + player_order)
         for (var i = 0; i < player_order.length; i++) {
             var winner = (gs.scores[player_order[i]] == gs.scores[player_order[0]]);
             $("div.final_score_buttons").append(final_score_html(gs, player_order[i], winner));

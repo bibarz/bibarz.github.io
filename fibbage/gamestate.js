@@ -27,10 +27,11 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	this.n_questions = n_questions;
 	this.n_final_questions = n_final_questions;
     this.deck_order = [...Array(this.n_questions).keys()];
-    shuffle(this.deck_order);
+    shuffle(this.deck_order);  // unnecessary since topic choice is random
     this.deck_index = -1;
     this.deck_final_order = [...Array(this.n_final_questions).keys()];
     this.deck_final_index = -1;
+    shuffle(this.deck_final_order);  // unnecessary since topic choice is random
     this.topic_idx = [];
     this.turn = 0;
     this.n_rounds = 8;
@@ -58,18 +59,19 @@ var GameState = function(n_questions, n_final_questions, player_names) {
         var topic_names = [];
         var topic_idx = []
         // I'm accessing the global JSON questions here, I didn't want to
+        var n_q = this.n_questions;
+        var qs = questions;
+        var d_idx = this.deck_index;
+        var d_o =  this.deck_order;
         if (this.round == this.n_rounds - 1) {
-            var n_q = this.n_final_questions;
-            var qs = final_questions;
-            var d_idx = this.deck_final_index;
-        } else {
-            var n_q = this.n_questions;
-            var qs = questions;
-            var d_idx = this.deck_index;
+            n_q = this.n_final_questions;
+            qs = final_questions;
+            d_idx = this.deck_final_index;
+            d_o =  this.deck_final_order;
         }
         for (var i=0; i<1000; i++) {
             var idx = Math.floor(Math.random() * (n_q - d_idx)) + d_idx;
-            var topic = qs[idx].category;
+            var topic = qs[d_o[idx]].category;
             if (topic_names.indexOf(topic) == -1) {
                 topic_names.push(topic);
                 topic_idx.push(idx);
@@ -98,6 +100,11 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	}
 	
 	this.next_round = function() {
+        if (this.round == this.n_rounds - 1) {
+            this.stage = 4;  // show final results
+            return true;
+        }
+
         this.stage = 0;
 		// Clear state
 		this.candidates.length = 0;
@@ -142,23 +149,25 @@ var GameState = function(n_questions, n_final_questions, player_names) {
 	}
 	
 	this.choose_topic = function(topic_idx) {
+        var n_q = this.n_questions;
+        var d_idx = this.deck_index;
+        var d_o =  this.deck_order;
         if (this.round == this.n_rounds - 1) {
-            var n_q = this.n_final_questions;
-            var d_idx = this.deck_final_index;
-            var d_o =  this.deck_final_order;
-        } else {
-            var n_q = this.n_questions;
-            var d_idx = this.deck_index;
-            var d_o =  this.deck_order;
+            n_q = this.n_final_questions;
+            d_idx = this.deck_final_index;
+            d_o =  this.deck_final_order;
         }
-        if (topic_idx < 0 || topic_idx >= n_q) {
+        if (topic_idx < d_idx) {
+			throw ("Topic idx " + topic_idx + " cannot be smaller than deck index " + d_idx);
+        }
+        if (topic_idx >= n_q) {
 			throw ("Topic idx " + topic_idx + " out of bounds for " + n_q + " questions.");
         }
         if (debug) {
 			console.log("Chose topic idx " + topic_idx + ", will switch with current deck idx " + d_idx);
 		}
         var tmp = d_o[d_idx];
-        d_o[d_idx] = topic_idx;
+        d_o[d_idx] = d_o[topic_idx];
         d_o[topic_idx] = tmp;
         this.stage = 1;
         return true;
@@ -253,12 +262,7 @@ var GameState = function(n_questions, n_final_questions, player_names) {
                 }  // just ignore the reward if it's for the computer's suggestions
             }
         }
-
-        if (this.round == this.n_rounds - 1) {
-            this.stage = 4;  // show final results
-        } else {
-            this.stage = 3;  // show round results
-        }
+        this.stage = 3;  // show round results
 		return true;
 	}
 }
