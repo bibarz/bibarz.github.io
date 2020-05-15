@@ -439,7 +439,7 @@ var display = function(session, gs, player_name) {
 		var send_answer = function() {
             var a = $(".answer_form input").val().trim();
             if (check_answer(a, q, player_idx, gs)) {
-                $(".answer_form input.the_answer").off("focusout");
+                //$(".answer_form input.the_answer").off("focusout");
                 $(".answer_form").off("submit").hide();
                 pub_command(session, {
                     name: "propose",
@@ -460,20 +460,20 @@ var display = function(session, gs, player_name) {
                 event.preventDefault();
                 send_answer();
             });
-            $(".answer_form input.the_answer").off("focusout").on("focusout", function(event){
-                console.log("Calling send answer from focus!");
-                send_answer();
-            });
+            //$(".answer_form input.the_answer").off("focusout").on("focusout", function(event){
+            //    console.log("Calling send answer from focus!");
+            //    send_answer();
+            //});
         } else {
             $("p.answer_caption").show().text("Thanks. " + missing_text);
             $(".answer_form input").val("");
-            $(".answer_form input.the_answer").off("focusout");
+            //$(".answer_form input.the_answer").off("focusout");
             $(".answer_form").off("submit").hide();
         }
 	} else {
         $("div.answer").hide();
         $(".answer_form input").val("");
-        $(".answer_form input.the_answer").off("focusout");
+        //$(".answer_form input.the_answer").off("focusout");
         $(".answer_form").off("submit").hide();
 	}
 	
