@@ -66,6 +66,7 @@ var send_player_name = function(session, player_name) {
 var setup_player_name = function(session) {
 	player_name = getCookie("player_name");
 	$("div.game_container").hide();
+	$("div.scoreboard").hide();
 	$("div.manage_container").show();
 	if (!player_name) {
 		if (debug) console.log("No player name registered yet.");
@@ -539,7 +540,7 @@ var display = function(session, gs, player_name) {
                 text = gs.candidates[i];
             }
             $("div.candidate_buttons").append(result_html(gs, i, text));
-        }
+        }kiki
     }
 	
 	// Scoreboard
@@ -610,6 +611,7 @@ $.getJSON("questions.json")
         if (is_chief) {
             if (!getCookie("game_is_on")) {
                 $("div.game_container").hide();
+                $("div.scoreboard").hide();
                 $("div.manage_container").show();
                 if (debug) { console.log("Setting up game.");}
                 session_promise.then(setup_game).then(setup_player_name);

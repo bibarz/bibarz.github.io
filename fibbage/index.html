@@ -37,104 +37,105 @@
                 <h3> Last round! Score is 3x </h3>
             </div>
 
-			<div class="topics container">
+            <div class="topics container">
                 <p class="topic_text"></p>
                 <div class="topic_buttons row">
                 </div>
-			</div>
+            </div>
 
-			<div class="question container">
-				<!-- <p class="question_caption"></p> -->
-			</div>
+            <div class="question container">
+                <!-- <p class="question_caption"></p> -->
+            </div>
 
-			<div class="answer container">
+            <div class="answer container">
                 <div class="row justify-content-between">
                 <div class="col-10">
-    				<p class="answer_caption"></p>
+                    <p class="answer_caption"></p>
                 </div>
-                <div class="skip_question col-2">
+                <div class="skip_question col-2 p-1">
                     <button class="btn btn-danger">Skip</button>
                 </div>
                 </div>
-				<form class="answer_form" action="#">
-					<input class="the_answer" type="textbox" placeholder="your answer">
+                <form class="answer_form" action="#">
+                    <input class="the_answer" type="textbox" placeholder="your answer">
                     <button type="submit" class="btn btn-primary m-2">Submit</button>
-				</form>
-			</div>
+                </form>
+            </div>
 
-			<div class="candidates container">
+            <div class="candidates container">
                 <p class="candidate_text"></p>
                 <div class="candidate_buttons row">
                 </div>
-			</div>
+            </div>
 
-			<div class="container next_round">
+            <div class="container next_round">
                 <div class="row justify-content-center">
                     <div class="col-2">
-				        <button class="btn btn-success">Next round</button>
+                        <button class="btn btn-success">Next round</button>
                     </div>
                 </div>
-			</div>
+            </div>
 
-			<div class="scoreboard container fixed-bottom">
-				<div class="row justify-content-center">
-                    <div class="col-2" style="text-align: center">
-                        Scoreboard
-                    </div>
-				</div>
-				<div class="row justify-content-around player_names" style="text-align:center">
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                </div>
-				<div class="row justify-content-around player_scores" style="text-align:center">
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                    <div class="col"></div>
-                </div>
-			</div>
-
-			<div class="container final_scores" style="text-align:center">
+            <div class="container final_scores" style="text-align:center">
                 <h2 class="final_scores_text">Final scores:</h2>
                 <div class="final_score_buttons row">
                 </div>
                 <div class="new_game row justify-content-center">
                     <div class="col-2">
-				        <button class="btn btn-success">New game</button>
+                        <button class="btn btn-success">New game</button>
                     </div>
                 </div>
-			</div>
+            </div>
 
             <div class="modal fade" id="takenAnswerModal" tabindex="-1" role="dialog" aria-labelledby="takenAnswerModal" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered" role="document">
                     <div class="modal-content">
-                    <div class="modal-body">
-                        Sorry, that answer is already taken
+                        <div class="modal-body">
+                            Sorry, that answer is already taken
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
                     </div>
                 </div>
             </div>
-		</div>
+        </div>
+
+        <div class="scoreboard container">
+            <div class="row justify-content-center">
+                <div class="col-2" style="text-align: center">
+                    Scoreboard
+                </div>
+            </div>
+            <div class="row justify-content-around player_names" style="text-align:center">
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+            </div>
+            <div class="row justify-content-around player_scores" style="text-align:center">
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+                <div class="col"></div>
+            </div>
+        </div>
 
         <!-- Optional JavaScript -->
         <!-- jQuery first, then Popper.js, then Bootstrap JS -->
