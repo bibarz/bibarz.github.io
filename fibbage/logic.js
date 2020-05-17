@@ -540,7 +540,7 @@ var display = function(session, gs, player_name) {
                 text = gs.candidates[i];
             }
             $("div.candidate_buttons").append(result_html(gs, i, text));
-        }kiki
+        }
     }
 	
 	// Scoreboard
