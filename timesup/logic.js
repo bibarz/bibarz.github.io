@@ -65,9 +65,9 @@ var send_cards = function(session) {
 	// while properly declared functions define "this" from their caller.
 	cards = $("#manage_container li").map(function() {return $(this).text();}).get();
 	if (debug) console.log("Sending cards " + cards);
-	session.topics.updateValue('timesup/cards',
-							   JSON.stringify(cards),
-							   diffusion.datatypes.json()).then(() => {$("#manage_container li").remove();},
+	session.topicUpdate.set('timesup/cards',
+				diffusion.datatypes.json(),
+				JSON.stringify(cards)).then(() => {$("#manage_container li").remove();},
 																reason => {alert("Las cosas no se han enviado, lo siento, refresca el navegador y manda de nuevo")});
 }
 
@@ -229,9 +229,7 @@ var pub_command = function(session, obj) {
 		if (debug) {
 			console.log("Publishing command with name " + obj["name"])
 		}
-		session.topics.updateValue('timesup/command',
-								   JSON.stringify(obj),
-								   diffusion.datatypes.json());
+		session.topicUpdate.set('timesup/command', diffusion.datatypes.json(), JSON.stringify(obj));
 	}
 }
 
@@ -254,9 +252,7 @@ var execute_command = function(session, gs, obj) {
 		refresh = gs.set_round_time(obj["time"]);
 	}
 	gs.refresh = refresh;
-	session.topics.updateValue('timesup/gamestate',
-							   JSON.stringify(gs),
-							   diffusion.datatypes.json());
+	session.topicUpdate.set('timesup/gamestate', diffusion.datatypes.json(), JSON.stringify(gs));
 }
 
 
