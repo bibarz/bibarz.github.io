@@ -54,9 +54,7 @@ var start_button_click_callback = function(session, player_names) {
 var send_player_name = function(session, player_name) {
 	if (debug) console.log("Sending player name " + player_name);
 	setCookie("player_name", player_name, 3600 * 6);
-	session.topics.updateValue('fibbage/player_names',
-							   player_name,
-							   diffusion.datatypes.string());
+	session.topicUpdate.set('fibbage/player_names', diffusion.datatypes.string(), player_name);
 	if (!is_chief) subscribe_to_gamestate(session, player_name);
 	$("div.waiting_for_session").show();
 	$("div.player_name").hide();
@@ -186,9 +184,7 @@ var pub_command = function(session, obj) {
 		if (debug) {
 			console.log("Publishing command with name " + obj["name"])
 		}
-		session.topics.updateValue('fibbage/command',
-								   JSON.stringify(obj),
-								   diffusion.datatypes.json());
+		session.topicUpdate.set('fibbage/command', JSON.stringify(obj), diffusion.datatypes.json());
 	}
 }
 
@@ -223,9 +219,7 @@ var execute_command = function(session, gs, obj) {
 		refresh = gs.next_round();
 	}
     gs.refresh = refresh;
-	session.topics.updateValue('fibbage/gamestate',
-							   JSON.stringify(gs),
-							   diffusion.datatypes.json());
+	session.topicUpdate.set('fibbage/gamestate', JSON.stringify(gs), diffusion.datatypes.json());
 }
 
 var check_answer = function(a, q, player_idx, gs) {
