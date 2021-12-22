@@ -219,7 +219,7 @@ var execute_command = function(session, gs, obj) {
 		refresh = gs.next_round();
 	}
     gs.refresh = refresh;
-	session.topicUpdate.set('fibbage/gamestate', diffusion.datatypes.json(), JSON.stringify(gs));
+    session.topicUpdate.set('fibbage/gamestate', diffusion.datatypes.json(), JSON.stringify(gs));
 }
 
 var check_answer = function(a, q, player_idx, gs) {
