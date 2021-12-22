@@ -184,7 +184,7 @@ var pub_command = function(session, obj) {
 		if (debug) {
 			console.log("Publishing command with name " + obj["name"])
 		}
-		session.topicUpdate.set('fibbage/command', JSON.stringify(obj), diffusion.datatypes.json());
+		session.topicUpdate.set('fibbage/command', diffusion.datatypes.json(), JSON.stringify(obj));
 	}
 }
 
@@ -219,7 +219,7 @@ var execute_command = function(session, gs, obj) {
 		refresh = gs.next_round();
 	}
     gs.refresh = refresh;
-	session.topicUpdate.set('fibbage/gamestate', JSON.stringify(gs), diffusion.datatypes.json());
+	session.topicUpdate.set('fibbage/gamestate', diffusion.datatypes.json(), JSON.stringify(gs));
 }
 
 var check_answer = function(a, q, player_idx, gs) {
